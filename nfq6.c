@@ -64,7 +64,6 @@ static uint32_t packet_mark;
 static int alternate_queue = 0;
 static bool quit = false;
 static int passes = 0;
-static struct nlattr *attr[NFQA_MAX + 1] = { };
 static socklen_t buffersize = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof buffersize, read_size = 0;
 static size_t sizeof_pktb;
@@ -142,12 +141,6 @@ main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }                                /* if (tests[4] && !alternate_queue) */
 
-  if (tests[19] && tests[8])
-  {
-    fputs("Tests 8 & 19 are mutually exclusive\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[19] && tests[8]) */
-
   setlinebuf(stdout);
 
 /* Initialise current time. If no error now, there never will be */
@@ -179,16 +172,6 @@ main(int argc, char *argv[])
     &socklen);
   printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
     read_size / (1024 * 1024));
-
-  if (tests[19])
-  {
-    if (connect(mnl_socket_get_fd(nl), (const struct sockaddr *)&snl,
-      sizeof snl) < 0)
-    {
-      perror("connect");
-      tests[19] = false;
-    }                        /* if (connect(mnl_socket_get_fd(nl), &snl, 12)) */
-  }                                /* if (tests[19]) */
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
   nfq_nlmsg_cfg_put_cmd(nlh, AF_INET6, NFQNL_CFG_CMD_BIND);
@@ -258,7 +241,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
 
-  if (tests[19] || tests[8])
+  if (tests[8])
     iov[0].iov_base = nlh;
 
   if (!accept)
@@ -268,7 +251,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
   }                                /* if (!accept) */
 
   if (pktb_mangled(pktb))
-    if (tests[19] || tests[8])
+    if (tests[8])
     {
       struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
       size_t len = pktb_len(pktb);
@@ -289,7 +272,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
         iov[iovidx].iov_len = pad;
       }                            /* if (pad) */
       iov[++iovidx].iov_base = iov[0].iov_base + iov[0].iov_len;
-    }                              /* if (tests[19] ...) */
+    }                              /* if (tests[8]) */
     else
       nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
 
@@ -324,7 +307,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
     nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
 
 send_verdict:
-  if (tests[19] || tests[8])
+  if (tests[8])
   {
     if (iovidx)
     {
@@ -361,7 +344,7 @@ send_verdict:
         exit(EXIT_FAILURE);
       }         /* if (write(mnl_socket_get_fd(nl), nlh, nlh->nlmsg_len) < 0) */
     }                              /* if (tests[8]) else */
-  }                                /* if (tests[19] ...) */
+  }                                /* if (tests[8]) */
   else
   {
     if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
@@ -369,7 +352,7 @@ send_verdict:
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
     }
-  }                                /* if (tests[19] ...) else */
+  }                                /* if (tests[8]) else */
   if (quit)
     exit(0);
 }
@@ -401,6 +384,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   int nc = 0;
   uint16_t plen;
   uint8_t *p;
+  struct nlattr *attr[NFQA_MAX + 1] = { };
   int (*mangler) (struct pkt_buff *, unsigned int, unsigned int, const char *,
     unsigned int);
   char *errfunc;
@@ -679,7 +663,7 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-    "   19: Use writev to avoid memcpy after mangling\n" /*  */
+    "   19: --- Spare ---\n" /*  */
     "   20: Set 16MB kernel socket buffer\n" /*  */
     );
 }                                  /* static void usage(void) */
