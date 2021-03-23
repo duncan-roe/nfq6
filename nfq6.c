@@ -25,6 +25,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <libnetfilter_queue/pktbuff.h>
+#include <libnetfilter_queue/callback.h>
 #include <linux/netfilter/nfnetlink_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
@@ -71,6 +72,10 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 /* Static prototypes */
 
+static int queue_cb_new(struct pkt_buff *supplied_pktb, size_t supplied_extra,
+  const struct nlmsghdr *nlh, void *data);
+static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
+  struct pkt_buff *supplied_pktb, size_t supplied_extra);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
@@ -140,6 +145,12 @@ main(int argc, char *argv[])
     fputs("Missing alternate queue number for test 4\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[4] && !alternate_queue) */
+
+  if (tests[19] && tests[7])
+  {
+    fputs("Tests 7 & 19 are mutually exclusive\n", stderr);
+    exit(EXIT_FAILURE);
+  }                                /* if (tests[19] && tests[7]) */
 
   setlinebuf(stdout);
 
@@ -214,7 +225,11 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }
 
-    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, NULL);
+    if (tests[19])
+      ret =
+        nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, NULL);
+    else
+      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, NULL);
     if (ret < 0 && !(errno == EINTR || tests[14]))
     {
       perror("mnl_cb_run");
@@ -309,6 +324,16 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 send_verdict:
   if (tests[8])
   {
+    const struct msghdr msg = {
+      .msg_name = &snl,
+      .msg_namelen = sizeof snl,
+      .msg_iov = iov,
+      .msg_iovlen = iovidx + (iov[iovidx].iov_len ? 1 : 0),
+      .msg_control = NULL,
+      .msg_controllen = 0,
+      .msg_flags = 0,
+    };                             /* const struct msghdr msg = */
+
     if (iovidx)
     {
       int i;
@@ -319,31 +344,12 @@ send_verdict:
     }                              /* if (iovidx) */
     else
       iov[0].iov_len = nlh->nlmsg_len;
-    if (tests[8])
+
+    if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0)
     {
-      const struct msghdr msg = {
-        .msg_name = &snl,
-        .msg_namelen = sizeof snl,
-        .msg_iov = iov,
-        .msg_iovlen = iovidx + (iov[iovidx].iov_len ? 1 : 0),
-        .msg_control = NULL,
-        .msg_controllen = 0,
-        .msg_flags = 0,
-      };                           /* const struct msghdr msg = */
-      if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0)
-      {
-        perror("sendmsg");
-        exit(EXIT_FAILURE);
-      }                   /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
-    }                              /* if (tests[8]) */
-    else
-    {
-      if (writev(mnl_socket_get_fd(nl), iov, iovidx + 1) < 0)
-      {
-        perror("writev");
-        exit(EXIT_FAILURE);
-      }         /* if (write(mnl_socket_get_fd(nl), nlh, nlh->nlmsg_len) < 0) */
-    }                              /* if (tests[8]) else */
+      perror("sendmsg");
+      exit(EXIT_FAILURE);
+    }                     /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
   }                                /* if (tests[8]) */
   else
   {
@@ -367,6 +373,24 @@ do {fputs(x, stderr); accept = false; goto send_verdict;} while (0)
 
 static int
 queue_cb(const struct nlmsghdr *nlh, void *data)
+{
+  return queue_cb_common(nlh, data, NULL, 0);
+}
+
+/* ****************************** queue_cb_new ****************************** */
+
+static int
+queue_cb_new(struct pkt_buff *supplied_pktb, size_t supplied_extra,
+  const struct nlmsghdr *nlh, void *data)
+{
+  return queue_cb_common(nlh, data, supplied_pktb, supplied_extra);
+}
+
+/* ***************************** queue_cb_common **************************** */
+
+static int
+queue_cb_common(const struct nlmsghdr *nlh, void *data,
+  struct pkt_buff *supplied_pktb, size_t supplied_extra)
 {
   struct nfqnl_msg_packet_hdr *ph = NULL;
   uint32_t id = 0, skbinfo;
@@ -461,16 +485,25 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 #ifndef NFQ_STATICS
   char pktbuf[plen + EXTRA + sizeof_pktb];
 #endif
-  if (tests[7])
+  if (tests[19])
   {
-    pktb = pktb_setup(AF_INET6, pktbuf, sizeof pktbuf, payload, plen);
-    errfunc = "pktb_setup";
-  }                                /* if (tests[7]) */
+    pktb =
+      pktb_populate(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
+    errfunc = "pktb_populate";
+  }                                /* if (tests[19]) */
   else
   {
-    pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
-    errfunc = "pktb_alloc";
-  }                                /* if (tests[7]) else */
+    if (tests[7])
+    {
+      pktb = pktb_setup(AF_INET6, pktbuf, sizeof pktbuf, payload, plen);
+      errfunc = "pktb_setup";
+    }                              /* if (tests[7]) */
+    else
+    {
+      pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
+      errfunc = "pktb_alloc";
+    }                              /* if (tests[7]) else */
+  }                                /* if (tests[19]) else */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
@@ -567,17 +600,20 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     {
       xxp_payload_len += 4;
 
+      if (!tests[19])
+      {
 /* Need to re-fetch pointers after this mangle */
-      if (tests[13])
-      {
-        tcph = nfq_tcp_get_hdr(pktb);
-        xxp_payload = nfq_tcp_get_payload(tcph, pktb);
-      }                            /* if (tests[13]) */
-      else
-      {
-        udph = nfq_udp_get_hdr(pktb);
-        xxp_payload = nfq_udp_get_payload(udph, pktb);
-      }                            /* if (tests[13]) else */
+        if (tests[13])
+        {
+          tcph = nfq_tcp_get_hdr(pktb);
+          xxp_payload = nfq_tcp_get_payload(tcph, pktb);
+        }                          /* if (tests[13]) */
+        else
+        {
+          udph = nfq_udp_get_hdr(pktb);
+          xxp_payload = nfq_udp_get_payload(udph, pktb);
+        }                          /* if (tests[13]) else */
+      }                            /* if (!tests[19]) */
     }                  /* if(mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7)) */
     else
       fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
@@ -594,16 +630,19 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
     {
       xxp_payload_len += 4;
-      if (tests[13])
+      if (!tests[19])
       {
-        tcph = nfq_tcp_get_hdr(pktb);
-        xxp_payload = nfq_tcp_get_payload(tcph, pktb);
-      }                            /* if (tests[13]) */
-      else
-      {
-        udph = nfq_udp_get_hdr(pktb);
-        xxp_payload = nfq_udp_get_payload(udph, pktb);
-      }                            /* if (tests[13]) else */
+        if (tests[13])
+        {
+          tcph = nfq_tcp_get_hdr(pktb);
+          xxp_payload = nfq_tcp_get_payload(tcph, pktb);
+        }                          /* if (tests[13]) */
+        else
+        {
+          udph = nfq_udp_get_hdr(pktb);
+          xxp_payload = nfq_udp_get_payload(udph, pktb);
+        }                          /* if (tests[13]) else */
+      }                            /* if (!tests[19]) */
     }                  /* if(mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7)) */
     else
       fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
@@ -619,7 +658,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 send_verdict:
   nfq_send_verdict(ntohs(nfg->res_id), id, accept);
 
-  if (!tests[7])
+  if (!(tests[7] || tests[19]))
     pktb_free(pktb);
 
   return MNL_CB_OK;
@@ -663,7 +702,7 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-    "   19: --- Spare ---\n" /*  */
+    "   19: Use nfq_cb_run\n"      /*  */
     "   20: Set 16MB kernel socket buffer\n" /*  */
     );
 }                                  /* static void usage(void) */
