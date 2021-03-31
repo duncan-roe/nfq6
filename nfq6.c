@@ -72,8 +72,8 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 /* Static prototypes */
 
-static int queue_cb_new(struct pkt_buff *supplied_pktb, size_t supplied_extra,
-  const struct nlmsghdr *nlh, void *data);
+static int queue_cb_new(const struct nlmsghdr *nlh, void *data,
+  struct pkt_buff *supplied_pktb, size_t supplied_extra);
 static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
   struct pkt_buff *supplied_pktb, size_t supplied_extra);
 static void usage(void);
@@ -380,8 +380,8 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 /* ****************************** queue_cb_new ****************************** */
 
 static int
-queue_cb_new(struct pkt_buff *supplied_pktb, size_t supplied_extra,
-  const struct nlmsghdr *nlh, void *data)
+queue_cb_new(const struct nlmsghdr *nlh, void *data,
+  struct pkt_buff *supplied_pktb, size_t supplied_extra)
 {
   return queue_cb_common(nlh, data, supplied_pktb, supplied_extra);
 }
