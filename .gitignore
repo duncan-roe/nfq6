@@ -6,3 +6,6 @@ actions*
 hee*
 .~*
 *.scr
+config.*
+autom4te.cache
+configure
