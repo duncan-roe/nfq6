@@ -25,7 +25,9 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <libnetfilter_queue/pktbuff.h>
+#ifdef HAVE_PKTB_POPULATE
 #include <libnetfilter_queue/callback.h>
+#endif
 #include <linux/netfilter/nfnetlink_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
@@ -74,8 +76,10 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 /* Static prototypes */
 
+#ifdef HAVE_PKTB_POPULATE
 static int queue_cb_new(const struct nlmsghdr *nlh, void *data,
   struct pkt_buff *supplied_pktb, size_t supplied_extra);
+#endif
 static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
   struct pkt_buff *supplied_pktb, size_t supplied_extra);
 static void usage(void);
@@ -163,6 +167,13 @@ main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
 #endif
+#ifndef HAVE_PKTB_POPULATE
+  if (tests[19])
+  {
+    fputs("Test 19 is not available\n", stderr);
+    exit(EXIT_FAILURE);
+  }                                /* if (tests[7]) */
+#endif
 
   if (tests[19] && tests[7])
   {
@@ -243,10 +254,12 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }
 
+#ifdef HAVE_PKTB_POPULATE
     if (tests[19])
       ret =
         nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, NULL);
     else
+#endif
       ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, NULL);
     if (ret < 0 && !(errno == EINTR || tests[14]))
     {
@@ -397,12 +410,14 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 
 /* ****************************** queue_cb_new ****************************** */
 
+#ifdef HAVE_PKTB_POPULATE
 static int
 queue_cb_new(const struct nlmsghdr *nlh, void *data,
   struct pkt_buff *supplied_pktb, size_t supplied_extra)
 {
   return queue_cb_common(nlh, data, supplied_pktb, supplied_extra);
 }
+#endif
 
 /* ***************************** queue_cb_common **************************** */
 
@@ -500,6 +515,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 #define EXTRA 255
+#ifdef HAVE_PKTB_POPULATE
   if (tests[19])
   {
     pktb =
@@ -507,6 +523,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     errfunc = "pktb_populate";
   }                                /* if (tests[19]) */
   else
+#endif
   {
 #ifdef HAVE_PKTB_SETUP
     if (tests[7])
@@ -691,7 +708,7 @@ usage(void)
 /* N.B. Trailing empty comments are there to stop gnu indent joining lines */
   puts("\nUsage: nfq6 [-a <alt q #>] " /*  */
 #ifdef HAVE_PKTB_SETUP
-  "[-p passes] " /*  */
+    "[-p passes] "                 /*  */
 #endif
     "[-t <test #>],... queue_number\n" /*  */
     "       nfq6 -h\n"             /*  */
@@ -717,7 +734,7 @@ usage(void)
 #ifdef HAVE_PKTB_SETUP
     "    7: Use pktb_setup()\n"    /*  */
 #else
-    "    7: n/a\n"    /*  */
+    "    7: n/a\n"                 /*  */
 #endif
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
     "    9: Replace 1st ASD by F\n" /*  */
@@ -730,7 +747,11 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
+#ifdef HAVE_PKTB_POPULATE
     "   19: Use nfq_cb_run\n"      /*  */
+#else
+    "    19: n/a\n"                /*  */
+#endif
     "   20: Set 16MB kernel socket buffer\n" /*  */
     );
 }                                  /* static void usage(void) */
