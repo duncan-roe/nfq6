@@ -6,6 +6,10 @@
 #pragma GCC diagnostic ignored "-Wparentheses"
 #pragma GCC diagnostic ignored "-Wpointer-arith"
 
+/* config.h */
+
+#include "config.h"
+
 /* System headers */
 
 #define _GNU_SOURCE
@@ -51,7 +55,6 @@
 #include "prototypes.h"
 #include "typedefs.h"
 #include "logger.h"
-#include "config.h"
 
 /* Static Variables */
 
