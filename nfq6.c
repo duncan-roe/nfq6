@@ -14,6 +14,7 @@
 
 #define _GNU_SOURCE
 #include <time.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -621,7 +622,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     xxp_payload_len = nfq_udp_get_payload_len(udph, pktb);
   }                                /* if (tests[13]) else */
 
-  if (tests[6] && memchr(xxp_payload, 'q', xxp_payload_len))
+  if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' && isspace(xxp_payload[1]))
   {
     accept = false;                /* Drop this packet */
     quit = true;                   /* Exit after giving verdict */
