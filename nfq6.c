@@ -622,7 +622,8 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     xxp_payload_len = nfq_udp_get_payload_len(udph, pktb);
   }                                /* if (tests[13]) else */
 
-  if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' && isspace(xxp_payload[1]))
+  if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
+    isspace(xxp_payload[1]))
   {
     accept = false;                /* Drop this packet */
     quit = true;                   /* Exit after giving verdict */
@@ -734,7 +735,8 @@ usage(void)
     "    3: Configure NFQA_CFG_F_FAIL_OPEN\n" /*  */
     "    4: Send packets to alternate -a queue\n" /*  */
     "    5: Force on test 4 and specify BYPASS\n" /*  */
-    "    6: Exit nfq6 if incoming packet contains 'q'\n" /*  */
+    "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /*  */
+    " (e.g. q\\r\\n)\n"            /*  */
 #ifdef HAVE_PKTB_SETUP
     "    7: Use pktb_setup()\n"    /*  */
 #else
