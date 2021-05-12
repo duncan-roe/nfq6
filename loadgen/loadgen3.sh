@@ -14,7 +14,7 @@ proc main {argc argv} \
   set argv0 $env(argv0)
   set pattern {}
   set num_pkts 0                   ;# default 1 pkt (for testing)
-  set q0 {}
+  set report_count 0
 
   puts "$argc args: $argv"
 
@@ -59,6 +59,14 @@ proc main {argc argv} \
         incr argc -2
       }
 
+      -r \
+      {
+        chkarg $argc $argv
+        set report_count [expr [lindex $argv 1] + 0]
+        set argv [lreplace $argv 0 1]
+        incr argc -2
+      }
+
       default {puts "\n[lindex $argv 0] unrecognised"; help 1}
     }                              ;# switch
   }                                ;# while
@@ -90,7 +98,10 @@ proc main {argc argv} \
       $pkt_idx_fmtd\r\n
     }
     if {!$pkt_idx} {log_user 0}
+    if {$report_count && !($pkt_idx % $report_count)} \
+    {puts -nonewline $pkt_idx_fmtd\r; flush stdout}
   }                                ;# for
+  if {$report_count} {puts {}}
 
   log_user 1
   exp_send -i $send_id q\r
@@ -126,7 +137,7 @@ proc help exitcode \
   puts "  -h: give this Help and exit"
   puts "  -n <n>: send pkts 0 - <n>"
   puts "  -p <text>: Send <text> as pattern"
-  puts "  -r <n>: Update display of pkts sent every <n> pkts NYI"
+  puts "  -r <n>: Update display of pkts sent every <n> pkts"
   puts {}
 
   exit $exitcode
