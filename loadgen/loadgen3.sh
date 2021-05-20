@@ -119,7 +119,8 @@ proc chkarg {argc argv} \
 
 proc help exitcode \
 {
-  global argv0
+  global env
+  set argv0 $env(argv0)
 
   set s [string length $argv0]
   set sp {}
@@ -130,7 +131,7 @@ proc help exitcode \
   puts "       $sp \[-n last_pkt\] \[-r report_interval \]"
   puts "       $argv0 -h"
   puts "  -e <name>: Pattern to send is env(<name>) NOT YET IMPLEMENTED (NYI)"
-  puts "  -f <file>: <file> contains pattern to send. NYI"
+  puts "  -f <file>: <file> contains pattern to send"
   puts "             If <file> has multiple lines, send packets in sequence NYI"
   puts -nonewline "             N.B. Same applies to multiple patterns "
   puts "specifiled by any method NYI"
