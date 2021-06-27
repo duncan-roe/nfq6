@@ -285,14 +285,17 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
   struct nlmsghdr *nlh;
   bool done = false;
-  int iovidx = 0;
+  int iovidx;
   struct iovec iov[4];
-  char padbuf[3];
+  int32_t padbuf;
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
 
   if (tests[8])
+  {
     iov[0].iov_base = nlh;
+    iovidx = 0;
+  }                                /* if (tests[8]) */
 
   if (!accept)
   {
@@ -317,8 +320,8 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
       pad = MNL_ALIGN(len) - len;
       if (pad)
       {
-        memset(padbuf, 0, pad);
-        iov[++iovidx].iov_base = padbuf;
+        padbuf = 0;
+        iov[++iovidx].iov_base = &padbuf;
         iov[iovidx].iov_len = pad;
       }                            /* if (pad) */
       iov[++iovidx].iov_base = iov[0].iov_base + iov[0].iov_len;
