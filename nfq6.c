@@ -82,7 +82,7 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 #ifdef HAVE_PKTB_POPULATE
 static int queue_cb_new(const struct nlmsghdr *nlh, void *data,
-  struct pkt_buff *supplied_pktb, size_t supplied_extra);
+  size_t supplied_extra);
 #endif
 static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
   struct pkt_buff *supplied_pktb, size_t supplied_extra);
@@ -316,7 +316,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
       nlh->nlmsg_len += sizeof(struct nlattr);
       iov[iovidx].iov_len = nlh->nlmsg_len;
       iov[++iovidx].iov_base = pktb_data(pktb);
-      iov[iovidx].iov_len = pktb_len(pktb);
+      iov[iovidx].iov_len = len;
       pad = MNL_ALIGN(len) - len;
       if (pad)
       {
@@ -420,9 +420,11 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 #ifdef HAVE_PKTB_POPULATE
 static int
 queue_cb_new(const struct nlmsghdr *nlh, void *data,
-  struct pkt_buff *supplied_pktb, size_t supplied_extra)
+  size_t supplied_extra)
 {
-  return queue_cb_common(nlh, data, supplied_pktb, supplied_extra);
+  struct pkt_buff pkt_b;
+
+  return queue_cb_common(nlh, data, &pkt_b, supplied_extra);
 }
 #endif
 
@@ -526,8 +528,8 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   if (tests[19])
   {
     pktb =
-      pktb_populate(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
-    errfunc = "pktb_populate";
+      pktb_setup(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
+    errfunc = "pktb_setup";
   }                                /* if (tests[19]) */
   else
 #endif
@@ -759,7 +761,7 @@ usage(void)
 #ifdef HAVE_PKTB_POPULATE
     "   19: Use nfq_cb_run\n"      /*  */
 #else
-    "    19: n/a\n"                /*  */
+    "   19: n/a\n"                 /*  */
 #endif
     "   20: Set 16MB kernel socket buffer\n" /*  */
     );
