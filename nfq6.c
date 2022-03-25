@@ -55,7 +55,6 @@
 
 #include "prototypes.h"
 #include "typedefs.h"
-#include "logger.h"
 
 /* Static Variables */
 
@@ -169,10 +168,6 @@ main(int argc, char *argv[])
   }                                /* if (tests[19] && tests[7]) */
 
   setlinebuf(stdout);
-
-/* Initialise current time. If no error now, there never will be */
-  if (!get_time_now())
-    exit(1);
 
   nl = mnl_socket_open(NETLINK_NETFILTER);
   if (nl == NULL)
@@ -498,8 +493,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   if (!normal)
   {
     snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
-    get_time_now();                /* Put here while only 1 LOG call */
-    LOG("%s", record_buf);
+    printf("%s", record_buf);
   }                                /* if (!normal) */
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
