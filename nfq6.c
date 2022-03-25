@@ -63,17 +63,11 @@ static struct mnl_socket *nl;
 /* Largest possible packet payload, plus netlink data overhead: */
 static char nlrxbuf[0xffff + 4096];
 static char nltxbuf[sizeof nlrxbuf];
-#ifdef HAVE_PKTB_SETUP
-static char pktbuf[sizeof nlrxbuf];
-#endif
 static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
 static uint32_t packet_mark;
 static int alternate_queue = 0;
 static bool quit = false;
-#ifdef HAVE_PKTB_SETUP
-static int passes = 0;
-#endif
 static socklen_t buffersize = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof buffersize, read_size = 0;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
@@ -101,11 +95,7 @@ main(int argc, char *argv[])
   int i;
 
   while ((i = getopt(argc, argv,
-#ifdef HAVE_PKTB_SETUP
-    "a:hp:t:"
-#else
     "a:ht:"
-#endif
     )) != -1)
   {
     switch (i)
@@ -124,15 +114,6 @@ main(int argc, char *argv[])
         usage();
         return 0;
 
-#ifdef HAVE_PKTB_SETUP
-      case 'p':
-        passes = atoi(optarg);
-        if (passes < 0)
-          passes = 0;              /* Finger trouble */
-        if (passes)
-          tests[6] = true;
-        break;
-#endif
 
       case 't':
         ret = atoi(optarg);
@@ -164,13 +145,11 @@ main(int argc, char *argv[])
     fputs("Missing alternate queue number for test 4\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[4] && !alternate_queue) */
-#ifndef HAVE_PKTB_SETUP
   if (tests[7])
   {
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-#endif
 #ifndef HAVE_PKTB_POPULATE
   if (tests[19])
   {
@@ -534,14 +513,6 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   else
 #endif
   {
-#ifdef HAVE_PKTB_SETUP
-    if (tests[7])
-    {
-      pktb = pktb_setup(AF_INET6, pktbuf, sizeof pktbuf, payload, plen);
-      errfunc = "pktb_setup";
-    }                              /* if (tests[7]) */
-    else
-#endif
     {
       pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
       errfunc = "pktb_alloc";
@@ -552,54 +523,6 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
     GIVE_UP(erbuf);
   }                                /* if (!pktb) */
-
-/* Get timings for pktb_setup vs. pktb _alloc if requested */
-#ifdef HAVE_PKTB_SETUP
-  if (passes)
-  {
-    struct rusage usage[2];
-    int i;
-
-    i = getrusage(RUSAGE_SELF, usage);
-    if (i)
-      perror("getrusage");
-    if (tests[7])
-    {
-      for (i = passes; i; i--)
-      {
-        pktb = pktb_setup(AF_INET6, pktbuf, sizeof pktbuf, payload, plen);
-        if (!pktb)
-        {
-          perror("pktb_setup");    /* Not expected ever */
-          break;
-        }                          /* if (!pktb) */
-      }                            /* for (i = passes; i; i--) */
-    }                              /* if (tests[7]) */
-    else
-    {
-      for (i = passes; i; i--)
-      {
-        pktb_free(pktb);
-        pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
-        if (!pktb)
-        {
-          perror("pktb_alloc");
-          break;
-        }                          /* if (!pktb) */
-      }                            /* for (i = passes; i; i--) */
-    }                              /* if (tests[7]) else */
-    i = getrusage(RUSAGE_SELF, usage + 1);
-    if (i)
-      perror("getrusage");
-    else
-      printf("passes: %d\n   sys: %lg\n  user: %lg\n", passes,
-        usage[1].ru_stime.tv_sec + usage[1].ru_stime.tv_usec / 1000000.0 -
-        usage[0].ru_stime.tv_sec - usage[0].ru_stime.tv_usec / 1000000.0,
-        usage[1].ru_utime.tv_sec + usage[1].ru_utime.tv_usec / 1000000.0 -
-        usage[0].ru_utime.tv_sec - usage[0].ru_utime.tv_usec / 1000000.0);
-    passes = 0;
-  }                                /* if (passes) */
-#endif
 
   if (!(iph = nfq_ip6_get_hdr(pktb)))
     GIVE_UP("Malformed IPv6\n");
@@ -717,19 +640,10 @@ usage(void)
 {
 /* N.B. Trailing empty comments are there to stop gnu indent joining lines */
   puts("\nUsage: nfq6 [-a <alt q #>] " /*  */
-#ifdef HAVE_PKTB_SETUP
-    "[-p passes] "                 /*  */
-#endif
     "[-t <test #>],... queue_number\n" /*  */
     "       nfq6 -h\n"             /*  */
     "  -a <n>: Alternate queue for test 4\n" /*  */
     "  -h: give this Help and exit\n" /*  */
-#ifdef HAVE_PKTB_SETUP
-    "  -p <n>: Time <n> passes of pktb_setup() or whatever on the first" /*  */
-    " packet.\n"                   /*  */
-    "          Forces on t6. It's expected the 2nd packet will be" /*  */
-    " \"q\"\n"                     /*  */
-#endif
     "  -t <n>: do Test <n>. Tests are:\n" /*  */
     "    0: If packet mark is zero, set it to 0xbeef and give verdict " /*  */
     "NF_REPEAT\n"                  /*  */
@@ -742,11 +656,7 @@ usage(void)
     "    5: Force on test 4 and specify BYPASS\n" /*  */
     "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /*  */
     " (e.g. q\\r\\n)\n"            /*  */
-#ifdef HAVE_PKTB_SETUP
-    "    7: Use pktb_setup()\n"    /*  */
-#else
     "    7: n/a\n"                 /*  */
-#endif
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
     "    9: Replace 1st ASD by F\n" /*  */
     "   10: Replace 1st QWE by RTYUIOP\n" /*  */
