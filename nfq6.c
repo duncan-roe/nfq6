@@ -30,7 +30,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <libnetfilter_queue/pktbuff.h>
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
 #include <libnetfilter_queue/callback.h>
 #endif
 #include <linux/netfilter/nfnetlink_queue.h>
@@ -74,7 +74,7 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 /* Static prototypes */
 
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
 static int queue_cb_new(const struct nlmsghdr *nlh, void *data,
   size_t supplied_extra);
 #endif
@@ -93,10 +93,14 @@ main(int argc, char *argv[])
   int ret;
   unsigned int portid, queue_num;
   int i;
+#ifdef HAVE_PKTB_SETUP
+# ifndef HAVE_PKTB_HEAD_SIZE
+# error "Inconsistent config: HAVE_PKTB_SETUP but not HAVE_PKTB_HEAD_SIZE"
+# endif
+  char pkt_b[pktb_head_size()];
+#endif
 
-  while ((i = getopt(argc, argv,
-    "a:ht:"
-    )) != -1)
+  while ((i = getopt(argc, argv, "a:ht:")) != -1)
   {
     switch (i)
     {
@@ -150,7 +154,7 @@ main(int argc, char *argv[])
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-#ifndef HAVE_PKTB_POPULATE
+#ifndef HAVE_PKTB_SETUP
   if (tests[19])
   {
     fputs("Test 19 is not available\n", stderr);
@@ -237,10 +241,10 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }
 
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
     if (tests[19])
       ret =
-        nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, NULL);
+        nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, pkt_b);
     else
 #endif
       ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, NULL);
@@ -396,14 +400,11 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 
 /* ****************************** queue_cb_new ****************************** */
 
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
 static int
-queue_cb_new(const struct nlmsghdr *nlh, void *data,
-  size_t supplied_extra)
+queue_cb_new(const struct nlmsghdr *nlh, void *data, size_t supplied_extra)
 {
-  struct pkt_buff pkt_b;
-
-  return queue_cb_common(nlh, data, &pkt_b, supplied_extra);
+  return queue_cb_common(nlh, data, data, supplied_extra);
 }
 #endif
 
@@ -503,11 +504,10 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 #define EXTRA 255
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
   if (tests[19])
   {
-    pktb =
-      pktb_setup(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
+    pktb = pktb_setup(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
     errfunc = "pktb_setup";
   }                                /* if (tests[19]) */
   else
@@ -668,7 +668,7 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-#ifdef HAVE_PKTB_POPULATE
+#ifdef HAVE_PKTB_SETUP
     "   19: Use nfq_cb_run\n"      /*  */
 #else
     "   19: n/a\n"                 /*  */
