@@ -34,13 +34,14 @@ proc main {argc argv} \
           puts "\n$pfile: not a regular file\n"
           exit 1
         }
-        set largefile [expr $stat(size) > 8]
+        set largefile [expr $stat(size) > 8192]
         if {$largefile} \
         {
           set tmpfile [exec mktemp -p /tmp loadgen3XXXX]
           exec cp $pfile $tmpfile
           set pfile $tmpfile
           set pchan [open $pfile r+]
+          set loglevel 0
         } \
         else {set pchan [open $pfile]} ;# if {$largefile} else
         if {[gets $pchan pattern] < 0} {puts "\n$pfile: read error\n"; exit 1}
@@ -112,6 +113,7 @@ proc main {argc argv} \
       chan seek $pchan $stat(size)
       chan puts $pchan $pkt_idx_fmtd
       exec nc -6 -q0 -u ::1 1042 < $pfile
+      log_user 0
     } \
     else {exp_send -i $send_id "$pattern $pkt_idx_fmtd\r"}
     expect \
