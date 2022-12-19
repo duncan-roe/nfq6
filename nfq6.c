@@ -282,6 +282,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
   }                                /* if (!accept) */
 
   if (pktb_mangled(pktb))
+  {
     if (tests[8])
     {
       struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
@@ -306,6 +307,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
     }                              /* if (tests[8]) */
     else
       nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
+  }                                /* if (pktb_mangled(pktb)) */
 
   if (tests[0] && !packet_mark)
   {

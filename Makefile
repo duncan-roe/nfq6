@@ -4,7 +4,7 @@ PROG = $(shell basename $$PWD)
 LIBS = -lmnl -lnetfilter_queue
 OBJ = $(SRCS:.c=.o)
 CPPFLAGS += $(shell getconf LFS_CFLAGS 2>/dev/null)
-CFLAGS += -g3 -ggdb \
+CFLAGS += -g3 -gdwarf-4 \
   -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wcast-align -Wstrict-prototypes \
   -Wmissing-prototypes
 $(PROG) : $(OBJ)
