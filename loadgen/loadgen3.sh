@@ -34,9 +34,25 @@ proc main {argc argv} \
           puts "\n$pfile: not a regular file\n"
           exit 1
         }
-        set pchan [open $pfile]
+        set largefile [expr $stat(size) > 8]
+        if {$largefile} \
+        {
+          set tmpfile [exec mktemp -p /tmp loadgen3XXXX]
+          exec cp $pfile $tmpfile
+          set pfile $tmpfile
+          set pchan [open $pfile r+]
+        } \
+        else {set pchan [open $pfile]} ;# if {$largefile} else
         if {[gets $pchan pattern] < 0} {puts "\n$pfile: read error\n"; exit 1}
-        close $pchan
+        if {$largefile} \
+        {
+          # Replace trailing Nl w/space
+          chan seek $pchan [expr $stat(size) - 1]
+          chan puts -nonewline $pchan " "
+          chan flush $pchan
+          chan configure $pchan -buffering line
+        } \
+        else {close $pchan} ;# if {$largefile} else
         set argv [lreplace $argv 0 1]
         incr argc -2
       }
@@ -77,20 +93,27 @@ proc main {argc argv} \
     help 1
   }                                ;# if {![string length $pattern]}
 
-  spawn nc -6 -l -u 1042
-  #sleep 1
+  spawn nc -6 -k -l -u 1042
   set recv_id $spawn_id
-  spawn nc -6 -u ::1 1042
-  #sleep 1
-  set send_id $spawn_id
-  set spawn_id $recv_id
+  if {!$largefile} \
+  {
+    spawn nc -6 -u ::1 1042
+    set send_id $spawn_id
+    set spawn_id $recv_id
+  }                                ;# if {!$largefile}
 
   set idx_wdth [string length $num_pkts]
 
   for {set pkt_idx 0} {$num_pkts >= 0} {incr num_pkts -1; incr pkt_idx} \
   {
-  set pkt_idx_fmtd [format %0${idx_wdth}d $pkt_idx]
-    exp_send -i $send_id "$pattern $pkt_idx_fmtd\r"
+    set pkt_idx_fmtd [format %0${idx_wdth}d $pkt_idx]
+    if {$largefile} \
+    {
+      chan seek $pchan $stat(size)
+      chan puts $pchan $pkt_idx_fmtd
+      exec nc -6 -q0 -u ::1 1042 < $pfile
+    } \
+    else {exp_send -i $send_id "$pattern $pkt_idx_fmtd\r"}
     expect \
     {
       -timeout 1
@@ -104,7 +127,12 @@ proc main {argc argv} \
   if {$report_count} {puts {}}
 
   log_user 1
-  exp_send -i $send_id q\r
+  if {$largefile} \
+  {
+    exec echo q >$pfile
+    exec nc -6 -q0 -u ::1 1042 < $pfile
+    exec rm $pfile
+  } else {exp_send -i $send_id q\r} ;# if {$largefile} else
   sleep 1
 }                                  ;# main
 
