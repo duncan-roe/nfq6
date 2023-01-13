@@ -15,6 +15,7 @@ proc main {argc argv} \
   set pattern {}
   set num_pkts 0                   ;# default 1 pkt (for testing)
   set report_count 0
+  set multiplier 1
 
   puts "$argc args: $argv"
 
@@ -68,6 +69,14 @@ proc main {argc argv} \
         incr argc -2
       }
 
+      -m \
+      {
+        chkarg $argc $argv
+        set multiplier [expr [lindex $argv 1] + 0]
+        set argv [lreplace $argv 0 1]
+        incr argc -2
+      }
+
       -p \
       {
         chkarg $argc $argv
@@ -94,7 +103,13 @@ proc main {argc argv} \
     help 1
   }                                ;# if {![string length $pattern]}
 
-  spawn nc -6 -k -l -u 1042
+  log_user 0
+  spawn sh
+  expect {$ }
+  exp_send {nc -6 -k -l -u 1042 | q '-bcnifm-f^Jm-^J^NC^NU^<PS16>^<PSHLNLN>}
+  exp_send {^<SUB>^<SGT>^NL^NJ^<6>X^<POPN>^J^N^@^<POPTAB A>^NRA^L^J^N^@' }
+  exp_send {2>/dev/null}
+  exp_send \r
   set recv_id $spawn_id
   if {!$largefile} \
   {
@@ -112,10 +127,15 @@ proc main {argc argv} \
     {
       chan seek $pchan $stat(size)
       chan puts $pchan $pkt_idx_fmtd
-      exec nc -6 -q0 -u ::1 1042 < $pfile
+      for {set i $multiplier} {$i>0} {incr i -1} \
+        {exec nc -6 -q0 -u ::1 1042 < $pfile &}
       log_user 0
     } \
-    else {exp_send -i $send_id "$pattern $pkt_idx_fmtd\r"}
+    else \
+    {
+       for {set i $multiplier} {$i>0} {incr i -1} \
+         {exp_send -i $send_id "$pattern $pkt_idx_fmtd\r"}
+    }
     expect \
     {
       -timeout 1
@@ -158,7 +178,8 @@ proc help exitcode \
 
   puts {}
   puts "Usage: $argv0 -p pattern | -f pattern_file | -e env_var_name"
-  puts "       $sp \[-n last_pkt\] \[-r report_interval \]"
+  puts -nonewline "       $sp \[-n last_pkt\] \[-r report_interval \]"
+  puts " \[-m multiplier (of -n)\]"
   puts "       $argv0 -h"
   puts "  -e <name>: Pattern to send is env(<name>) NOT YET IMPLEMENTED (NYI)"
   puts "  -f <file>: <file> contains pattern to send"
