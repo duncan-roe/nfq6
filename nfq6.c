@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -41,7 +42,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 21
+#define NUM_TESTS 22
 
 /* If bool is a macro, get rid of it */
 
@@ -97,6 +98,9 @@ main(int argc, char *argv[])
 # error "Inconsistent config: HAVE_PKTB_SETUP but not HAVE_PKTB_HEAD_SIZE"
 # endif
   char pkt_b[pktb_head_size()];
+#endif
+#ifdef HAVE_PKTB_SETUP_RAW
+size_t sperrume;                   /* Spare room (strine) */
 #endif
 
   while ((i = getopt(argc, argv, "a:ht:")) != -1)
@@ -157,6 +161,13 @@ main(int argc, char *argv[])
   if (tests[19])
   {
     fputs("Test 19 is not available\n", stderr);
+    exit(EXIT_FAILURE);
+  }                                /* if (tests[7]) */
+#endif
+#ifndef HAVE_PKTB_SETUP_RAW
+  if (tests[21])
+  {
+    fputs("Test 21 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
 #endif
@@ -235,6 +246,10 @@ main(int argc, char *argv[])
         continue;
       exit(EXIT_FAILURE);
     }
+    assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
+#ifdef HAVE_PKTB_SETUP_RAW
+    sperrume = sizeof nlrxbuf - ret;
+#endif
 
 #ifdef HAVE_PKTB_SETUP
     if (tests[19])
@@ -242,7 +257,12 @@ main(int argc, char *argv[])
         nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, pkt_b);
     else
 #endif
-      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, NULL);
+      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb,
+#ifdef HAVE_PKTB_SETUP_RAW
+        &sperrume);
+#else
+        NULL);
+#endif
     if (ret < 0 && !(errno == EINTR || tests[14]))
     {
       perror("mnl_cb_run");
@@ -431,6 +451,9 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   int (*mangler) (struct pkt_buff *, unsigned int, unsigned int, const char *,
     unsigned int);
   char *errfunc;
+#ifdef HAVE_PKTB_SETUP_RAW
+  char pb[pktb_head_size()];
+#endif
 
   if (nfq_nlmsg_parse(nlh, attr) < 0)
   {
@@ -506,14 +529,20 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     pktb = pktb_setup(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
     errfunc = "pktb_setup";
   }                                /* if (tests[19]) */
-  else
 #endif
+#ifdef HAVE_PKTB_SETUP_RAW
+  if (tests[21])
+  {
+    pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
+  }                                /* if (tests[21]) */
+#endif
+  if (!tests[21] && !tests[19])
   {
     {
       pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
       errfunc = "pktb_alloc";
     }                              /* if (tests[7]) else */
-  }                                /* if (tests[19]) else */
+  }                                /* if (!tests[21] && !tests[19]) */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
@@ -562,24 +591,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   if (tests[10] && (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
   {
     if (mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
-    {
       xxp_payload_len += 4;
-
-      if (!tests[19])
-      {
-/* Need to re-fetch pointers after this mangle */
-        if (tests[13])
-        {
-          tcph = nfq_tcp_get_hdr(pktb);
-          xxp_payload = nfq_tcp_get_payload(tcph, pktb);
-        }                          /* if (tests[13]) */
-        else
-        {
-          udph = nfq_udp_get_hdr(pktb);
-          xxp_payload = nfq_udp_get_payload(udph, pktb);
-        }                          /* if (tests[13]) else */
-      }                            /* if (!tests[19]) */
-    }                  /* if(mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7)) */
     else
       fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
   }                     /* if (tests[10] && (p = strstr(xxp_payload, "QWE"))) */
@@ -623,7 +635,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
 send_verdict:
   nfq_send_verdict(ntohs(nfg->res_id), id, accept);
 
-  if (!(tests[7] || tests[19]))
+  if (!(tests[7] || tests[19] || tests[21]))
     pktb_free(pktb);
 
   return MNL_CB_OK;
@@ -670,5 +682,10 @@ usage(void)
     "   19: n/a\n"                 /*  */
 #endif
     "   20: Set 16MB kernel socket buffer\n" /*  */
+#ifdef HAVE_PKTB_SETUP_RAW
+    "   21: Use pktb_setup_raw\n"  /*  */
+#else
+    "   21: n/a\n"                 /*  */
+#endif
     );
 }                                  /* static void usage(void) */
