@@ -42,7 +42,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 22
+#define NUM_TESTS 23
 
 /* If bool is a macro, get rid of it */
 
@@ -71,6 +71,8 @@ static bool quit = false;
 static socklen_t buffersize = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof buffersize, read_size = 0;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
+static char *myP;
+static uint8_t myPROTO;
 
 /* Static prototypes */
 
@@ -83,6 +85,11 @@ static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
+static int (*mangler)(struct pkt_buff *, unsigned int, unsigned int,
+  const char *, unsigned int);
+static void *(*my_xxp_get_hdr)(struct pkt_buff *);
+static void *(*my_xxp_get_payload)(void *, struct pkt_buff *);
+static unsigned int (*my_xxp_get_payload_len)(void *, struct pkt_buff *);
 
 /* ********************************** main ********************************** */
 
@@ -100,7 +107,7 @@ main(int argc, char *argv[])
   char pkt_b[pktb_head_size()];
 #endif
 #ifdef HAVE_PKTB_SETUP_RAW
-size_t sperrume;                   /* Spare room (strine) */
+  size_t sperrume;                 /* Spare room (strine) */
 #endif
 
   while ((i = getopt(argc, argv, "a:ht:")) != -1)
@@ -157,6 +164,28 @@ size_t sperrume;                   /* Spare room (strine) */
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
+  if (tests[13])
+  {
+    mangler = nfq_tcp_mangle_ipv6;
+    myP = "TCP";
+    myPROTO = IPPROTO_TCP;
+    my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
+    my_xxp_get_payload =
+      (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
+    my_xxp_get_payload_len =
+      (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
+  }                                /* if (tests[13]) */
+  else
+  {
+    mangler = nfq_udp_mangle_ipv6;
+    myP = "UDP";
+    myPROTO = IPPROTO_UDP;
+    my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
+    my_xxp_get_payload =
+      (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
+    my_xxp_get_payload_len =
+      (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
+  }                                /* if (tests[13]) else */
 #ifndef HAVE_PKTB_SETUP
   if (tests[19])
   {
@@ -172,11 +201,11 @@ size_t sperrume;                   /* Spare room (strine) */
   }                                /* if (tests[7]) */
 #endif
 
-  if (tests[19] && tests[7])
+  if (tests[19] && tests[21])
   {
-    fputs("Tests 7 & 19 are mutually exclusive\n", stderr);
+    fputs("Tests 21 & 19 are mutually exclusive\n", stderr);
     exit(EXIT_FAILURE);
-  }                                /* if (tests[19] && tests[7]) */
+  }                                /* if (tests[19] && tests[21]) */
 
   setlinebuf(stdout);
 
@@ -409,6 +438,12 @@ send_verdict:
 #define GIVE_UP(x)\
 do {fputs(x, stderr); accept = false; goto send_verdict;} while (0)
 
+#ifdef GIVE_UP2
+#undef GIVE_UP2
+#endif
+#define GIVE_UP2(x, y)\
+do {fprintf(stderr, x, y); accept = false; goto send_verdict;} while (0)
+
 static int
 queue_cb(const struct nlmsghdr *nlh, void *data)
 {
@@ -440,7 +475,10 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   bool accept = true;
   struct udphdr *udph;
   struct tcphdr *tcph;
-  struct ip6_hdr *iph;
+  struct ip6_hdr *ip6h;
+  struct ip_hdr *ip4h;
+  void **iphp = tests[22] ? (void **)&ip4h : (void **)&ip6h;
+  void **xxph = tests[13] ? (void **)&tcph : (void **)&udph;
   char erbuf[4096];
   bool normal = !tests[16];        /* Don't print record structure */
   char record_buf[160];
@@ -448,8 +486,6 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   uint16_t plen;
   uint8_t *p;
   struct nlattr *attr[NFQA_MAX + 1] = { };
-  int (*mangler) (struct pkt_buff *, unsigned int, unsigned int, const char *,
-    unsigned int);
   char *errfunc;
 #ifdef HAVE_PKTB_SETUP_RAW
   char pb[pktb_head_size()];
@@ -522,6 +558,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   }                                /* if (!normal) */
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
+/* AF_INET6 and AF_INET work the same, no need to look at tests[22] */
 #define EXTRA 255
 #ifdef HAVE_PKTB_SETUP
   if (tests[19])
@@ -549,31 +586,16 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     GIVE_UP(erbuf);
   }                                /* if (!pktb) */
 
-  if (!(iph = nfq_ip6_get_hdr(pktb)))
+  if (!(*iphp = nfq_ip6_get_hdr(pktb)))
     GIVE_UP("Malformed IPv6\n");
 
-  if (tests[13])
-  {
-    mangler = nfq_tcp_mangle_ipv6;
-    if (!nfq_ip6_set_transport_header(pktb, iph, IPPROTO_TCP))
-      GIVE_UP("No TCP payload found\n");
-    if (!(tcph = nfq_tcp_get_hdr(pktb)))
-      GIVE_UP("Packet too short to get TCP header\n");
-    if (!(xxp_payload = nfq_tcp_get_payload(tcph, pktb)))
-      GIVE_UP("Packet too short to get TCP payload\n");
-    xxp_payload_len = nfq_tcp_get_payload_len(tcph, pktb);
-  }                                /* if (tests[13]) */
-  else
-  {
-    mangler = nfq_udp_mangle_ipv6;
-    if (!nfq_ip6_set_transport_header(pktb, iph, IPPROTO_UDP))
-      GIVE_UP("No UDP payload found\n");
-    if (!(udph = nfq_udp_get_hdr(pktb)))
-      GIVE_UP("Packet too short to get UDP header\n");
-    if (!(xxp_payload = nfq_udp_get_payload(udph, pktb)))
-      GIVE_UP("Packet too short to get UDP payload\n");
-    xxp_payload_len = nfq_udp_get_payload_len(udph, pktb);
-  }                                /* if (tests[13]) else */
+  if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
+    GIVE_UP2("No %s payload found\n", myP);
+  if (!(*xxph = my_xxp_get_hdr(pktb)))
+    GIVE_UP2("Packet too short to get %s header\n", myP);
+  if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
+    GIVE_UP2("Packet too short to get %s payload\n", myP);
+  xxp_payload_len = my_xxp_get_payload_len(*xxph, pktb);
 
   if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
     isspace(xxp_payload[1]))
@@ -605,22 +627,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   if (tests[12] && (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
   {
     if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
-    {
       xxp_payload_len += 4;
-      if (!tests[19])
-      {
-        if (tests[13])
-        {
-          tcph = nfq_tcp_get_hdr(pktb);
-          xxp_payload = nfq_tcp_get_payload(tcph, pktb);
-        }                          /* if (tests[13]) */
-        else
-        {
-          udph = nfq_udp_get_hdr(pktb);
-          xxp_payload = nfq_udp_get_payload(udph, pktb);
-        }                          /* if (tests[13]) else */
-      }                            /* if (!tests[19]) */
-    }                  /* if(mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7)) */
     else
       fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
   }                     /* if (tests[12] && (p = strstr(xxp_payload, "QWE"))) */
@@ -687,5 +694,6 @@ usage(void)
 #else
     "   21: n/a\n"                 /*  */
 #endif
+    "   22: Use IPv4\n"            /*  */
     );
 }                                  /* static void usage(void) */
