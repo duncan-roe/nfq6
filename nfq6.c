@@ -39,23 +39,26 @@
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
 #include <libnetfilter_queue/libnetfilter_queue_tcp.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
+#include <libnetfilter_queue/libnetfilter_queue_ipv4.h>
 
 /* Macros */
 
 #define NUM_TESTS 23
 
 /* If bool is a macro, get rid of it */
-
 #ifdef bool
 #undef bool
 #undef true
 #undef false
 #endif
 
-/* Headers */
+/* Typedefs */
 
-#include "prototypes.h"
-#include "typedefs.h"
+typedef enum bool
+{
+  false,
+  true
+} bool;
 
 /* Static Variables */
 
@@ -90,6 +93,7 @@ static int (*mangler)(struct pkt_buff *, unsigned int, unsigned int,
 static void *(*my_xxp_get_hdr)(struct pkt_buff *);
 static void *(*my_xxp_get_payload)(void *, struct pkt_buff *);
 static unsigned int (*my_xxp_get_payload_len)(void *, struct pkt_buff *);
+static void *(*my_ipy_get_hdr)(struct pkt_buff *);
 
 /* ********************************** main ********************************** */
 
@@ -164,9 +168,13 @@ main(int argc, char *argv[])
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
+  if (tests[22])
+    my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
+  else
+    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
   if (tests[13])
   {
-    mangler = nfq_tcp_mangle_ipv6;
+    mangler = tests[22] ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
     myP = "TCP";
     myPROTO = IPPROTO_TCP;
     my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
@@ -177,7 +185,7 @@ main(int argc, char *argv[])
   }                                /* if (tests[13]) */
   else
   {
-    mangler = nfq_udp_mangle_ipv6;
+    mangler = tests[22] ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
     myP = "UDP";
     myPROTO = IPPROTO_UDP;
     my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
@@ -236,7 +244,7 @@ main(int argc, char *argv[])
     read_size / (1024 * 1024));
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-  nfq_nlmsg_cfg_put_cmd(nlh, AF_INET6, NFQNL_CFG_CMD_BIND);
+  nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
 
   if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
   {
@@ -586,11 +594,19 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
     GIVE_UP(erbuf);
   }                                /* if (!pktb) */
 
-  if (!(*iphp = nfq_ip6_get_hdr(pktb)))
-    GIVE_UP("Malformed IPv6\n");
+  if (!(*iphp = my_ipy_get_hdr(pktb)))
+    GIVE_UP2("Malformed IPv%c\n", tests[22] ? '4' : '6');
 
-  if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
-    GIVE_UP2("No %s payload found\n", myP);
+  if (tests[22])
+  {
+    if (nfq_ip_set_transport_header(pktb, *iphp))
+      GIVE_UP("No payload found\n");
+  }                                /* if (tests[22]) */
+  else
+  {
+    if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
+      GIVE_UP2("No %s payload found\n", myP);
+  }                                /* if (tests[22]) else */
   if (!(*xxph = my_xxp_get_hdr(pktb)))
     GIVE_UP2("Packet too short to get %s header\n", myP);
   if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
