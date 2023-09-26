@@ -1,15 +1,5 @@
 /* N F Q 6 */
 
-/* pragmas */
-
-#pragma GCC diagnostic ignored "-Wpointer-sign"
-#pragma GCC diagnostic ignored "-Wparentheses"
-#pragma GCC diagnostic ignored "-Wpointer-arith"
-
-/* config.h */
-
-#include "config.h"
-
 /* System headers */
 
 #define _GNU_SOURCE
@@ -31,9 +21,6 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <libnetfilter_queue/pktbuff.h>
-#ifdef HAVE_PKTB_SETUP
-#include <libnetfilter_queue/callback.h>
-#endif
 #include <linux/netfilter/nfnetlink_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
@@ -79,12 +66,6 @@ static uint8_t myPROTO;
 
 /* Static prototypes */
 
-#ifdef HAVE_PKTB_SETUP
-static int queue_cb_new(const struct nlmsghdr *nlh, void *data,
-  size_t supplied_extra);
-#endif
-static int queue_cb_common(const struct nlmsghdr *nlh, void *data,
-  struct pkt_buff *supplied_pktb, size_t supplied_extra);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
@@ -104,15 +85,7 @@ main(int argc, char *argv[])
   int ret;
   unsigned int portid, queue_num;
   int i;
-#ifdef HAVE_PKTB_SETUP
-# ifndef HAVE_PKTB_HEAD_SIZE
-# error "Inconsistent config: HAVE_PKTB_SETUP but not HAVE_PKTB_HEAD_SIZE"
-# endif
-  char pkt_b[pktb_head_size()];
-#endif
-#ifdef HAVE_PKTB_SETUP_RAW
   size_t sperrume;                 /* Spare room (strine) */
-#endif
 
   while ((i = getopt(argc, argv, "a:ht:")) != -1)
   {
@@ -194,20 +167,16 @@ main(int argc, char *argv[])
     my_xxp_get_payload_len =
       (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
   }                                /* if (tests[13]) else */
-#ifndef HAVE_PKTB_SETUP
   if (tests[19])
   {
     fputs("Test 19 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-#endif
-#ifndef HAVE_PKTB_SETUP_RAW
   if (tests[21])
   {
     fputs("Test 21 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-#endif
 
   if (tests[19] && tests[21])
   {
@@ -284,22 +253,9 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }
     assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
-#ifdef HAVE_PKTB_SETUP_RAW
     sperrume = sizeof nlrxbuf - ret;
-#endif
 
-#ifdef HAVE_PKTB_SETUP
-    if (tests[19])
-      ret =
-        nfq_cb_run(nlrxbuf, ret, sizeof nlrxbuf, portid, queue_cb_new, pkt_b);
-    else
-#endif
-      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb,
-#ifdef HAVE_PKTB_SETUP_RAW
-        &sperrume);
-#else
-        NULL);
-#endif
+    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
     if (ret < 0 && !(errno == EINTR || tests[14]))
     {
       perror("mnl_cb_run");
@@ -360,7 +316,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
         iov[++iovidx].iov_base = &padbuf;
         iov[iovidx].iov_len = pad;
       }                            /* if (pad) */
-      iov[++iovidx].iov_base = iov[0].iov_base + iov[0].iov_len;
+      iov[++iovidx].iov_base = (uint8_t *)iov[0].iov_base + iov[0].iov_len;
     }                              /* if (tests[8]) */
     else
       nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
@@ -455,25 +411,6 @@ do {fprintf(stderr, x, y); accept = false; goto send_verdict;} while (0)
 static int
 queue_cb(const struct nlmsghdr *nlh, void *data)
 {
-  return queue_cb_common(nlh, data, NULL, 0);
-}
-
-/* ****************************** queue_cb_new ****************************** */
-
-#ifdef HAVE_PKTB_SETUP
-static int
-queue_cb_new(const struct nlmsghdr *nlh, void *data, size_t supplied_extra)
-{
-  return queue_cb_common(nlh, data, data, supplied_extra);
-}
-#endif
-
-/* ***************************** queue_cb_common **************************** */
-
-static int
-queue_cb_common(const struct nlmsghdr *nlh, void *data,
-  struct pkt_buff *supplied_pktb, size_t supplied_extra)
-{
   struct nfqnl_msg_packet_hdr *ph = NULL;
   uint32_t id = 0, skbinfo;
   struct nfgenmsg *nfg;
@@ -495,9 +432,7 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
   uint8_t *p;
   struct nlattr *attr[NFQA_MAX + 1] = { };
   char *errfunc;
-#ifdef HAVE_PKTB_SETUP_RAW
   char pb[pktb_head_size()];
-#endif
 
   if (nfq_nlmsg_parse(nlh, attr) < 0)
   {
@@ -568,19 +503,10 @@ queue_cb_common(const struct nlmsghdr *nlh, void *data,
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 /* AF_INET6 and AF_INET work the same, no need to look at tests[22] */
 #define EXTRA 255
-#ifdef HAVE_PKTB_SETUP
-  if (tests[19])
-  {
-    pktb = pktb_setup(supplied_pktb, AF_INET6, payload, plen, supplied_extra);
-    errfunc = "pktb_setup";
-  }                                /* if (tests[19]) */
-#endif
-#ifdef HAVE_PKTB_SETUP_RAW
   if (tests[21])
   {
     pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
   }                                /* if (tests[21]) */
-#endif
   if (!tests[21] && !tests[19])
   {
     {
@@ -699,17 +625,9 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-#ifdef HAVE_PKTB_SETUP
-    "   19: Use nfq_cb_run\n"      /*  */
-#else
     "   19: n/a\n"                 /*  */
-#endif
     "   20: Set 16MB kernel socket buffer\n" /*  */
-#ifdef HAVE_PKTB_SETUP_RAW
     "   21: Use pktb_setup_raw\n"  /*  */
-#else
-    "   21: n/a\n"                 /*  */
-#endif
     "   22: Use IPv4\n"            /*  */
     );
 }                                  /* static void usage(void) */
