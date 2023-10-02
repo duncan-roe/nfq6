@@ -172,17 +172,6 @@ main(int argc, char *argv[])
     fputs("Test 19 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-  if (tests[21])
-  {
-    fputs("Test 21 is not available\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[7]) */
-
-  if (tests[19] && tests[21])
-  {
-    fputs("Tests 21 & 19 are mutually exclusive\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[19] && tests[21]) */
 
   setlinebuf(stdout);
 
