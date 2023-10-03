@@ -171,7 +171,7 @@ main(int argc, char *argv[])
   {
     fputs("Test 19 is not available\n", stderr);
     exit(EXIT_FAILURE);
-  }                                /* if (tests[7]) */
+  }                                /* if (tests[19]) */
 
   setlinebuf(stdout);
 
@@ -495,14 +495,13 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   if (tests[21])
   {
     pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
+    errfunc = "pktb_setup_raw";
   }                                /* if (tests[21]) */
-  if (!tests[21] && !tests[19])
+  else
   {
-    {
-      pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
-      errfunc = "pktb_alloc";
-    }                              /* if (tests[7]) else */
-  }                                /* if (!tests[21] && !tests[19]) */
+    pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
+    errfunc = "pktb_alloc";
+  }                                /* if (!tests[21] else */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
@@ -573,7 +572,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 send_verdict:
   nfq_send_verdict(ntohs(nfg->res_id), id, accept);
 
-  if (!(tests[7] || tests[19] || tests[21]))
+  if (!tests[21])
     pktb_free(pktb);
 
   return MNL_CB_OK;
