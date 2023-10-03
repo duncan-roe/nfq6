@@ -8,13 +8,15 @@
 #include <errno.h>
 #include <stdio.h>
 #include <assert.h>
+#include <stddef.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
 #include <linux/ip.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <linux/types.h>
+#include <netinet/ip6.h>
 #include <sys/resource.h>
 #include <libmnl/libmnl.h>
 #include <linux/if_ether.h>
@@ -23,10 +25,10 @@
 #include <libnetfilter_queue/pktbuff.h>
 #include <linux/netfilter/nfnetlink_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
-#include <libnetfilter_queue/libnetfilter_queue_udp.h>
 #include <libnetfilter_queue/libnetfilter_queue_tcp.h>
-#include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
+#include <libnetfilter_queue/libnetfilter_queue_udp.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv4.h>
+#include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
 
 /* Macros */
 
@@ -66,6 +68,7 @@ static uint8_t myPROTO;
 
 /* Static prototypes */
 
+static bool ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
@@ -141,6 +144,11 @@ main(int argc, char *argv[])
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
+  if (tests[13])
+  {
+    fputs("Test 13 is not available\n", stderr);
+    exit(EXIT_FAILURE);
+  }                                /* if (tests[13]) */
   if (tests[19])
   {
     fputs("Test 19 is not available\n", stderr);
@@ -384,7 +392,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   struct udphdr *udph;
   struct tcphdr *tcph;
   struct ip6_hdr *ip6h;
-  struct ip_hdr *ip4h;
+  struct iphdr *ip4h;
   void **iphp;
   void **xxph = tests[13] ? (void **)&tcph : (void **)&udph;
   char erbuf[4096];
@@ -451,28 +459,36 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
   else
     my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
-  if (tests[13])
+
+/* Determine if UDP or TCP */
+  if (is_IPv4)
+    myPROTO=((struct iphdr *)payload)->protocol;
+  else if (!ip6_get_proto((struct ip6_hdr *)payload, &myPROTO))
+      GIVE_UP("Can't determine if TCP or UDP\n");
+  if (myPROTO == IPPROTO_TCP)
   {
+    xxph = (void **)&tcph;
     mangler = is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
     myP = "TCP";
-    myPROTO = IPPROTO_TCP;
     my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
     my_xxp_get_payload =
       (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
     my_xxp_get_payload_len =
       (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
-  }                                /* if (tests[13]) */
-  else
+  }                                /* if (myPROTO == IPPROTO_TCP) */
+  else if (myPROTO == IPPROTO_UDP)
   {
+    xxph = (void **)&udph;
     mangler = is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
     myP = "UDP";
-    myPROTO = IPPROTO_UDP;
     my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
     my_xxp_get_payload =
       (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
     my_xxp_get_payload_len =
       (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
-  }                                /* if (tests[13]) else */
+  }                                /* else if (myPROTO == IPPROTO_UDP) */
+  else
+    GIVE_UP2("Unrecognised l4 protocol: %d\n", myPROTO);
 
 /*
  * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
@@ -612,7 +628,7 @@ usage(void)
     "   10: Replace 1st QWE by RTYUIOP\n" /*  */
     "   11: Replace 2nd ASD by G\n" /*  */
     "   12: Replace 2nd QWE by MNBVCXZ\n" /*  */
-    "   13: Use TCP\n"             /*  */
+    "   13: n/a\n"                 /*  */
     "   14: Report EINTR if we get it\n" /*  */
     "   15: Log netlink packets with no checksum\n" /*  */
     "   16: Log all netlink packets\n" /*  */
@@ -623,3 +639,74 @@ usage(void)
     "   21: Use pktb_setup_raw\n"  /*  */
     );
 }                                  /* static void usage(void) */
+
+/* ****************************** ip6_get_proto ***************************** */
+
+static bool
+ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto)
+{
+/* This code is a copy of nfq_ip6_set_transport_header(), modified to return the
+ * upper-layer protocol (if supported) instead. */
+
+  uint8_t nexthdr = ip6h->ip6_nxt;
+  uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
+
+  while (nexthdr == IPPROTO_HOPOPTS ||
+    nexthdr == IPPROTO_ROUTING ||
+    nexthdr == IPPROTO_FRAGMENT ||
+    nexthdr == IPPROTO_AH ||
+    nexthdr == IPPROTO_NONE || nexthdr == IPPROTO_DSTOPTS)
+  {
+    struct ip6_ext *ip6_ext;
+    uint32_t hdrlen;
+
+/* No more extensions, we're done. */
+    if (nexthdr == IPPROTO_NONE)
+      break;
+/* No room for extension, bad packet. */
+    if (pktb_data(pktb) + pktb_len(pktb) - cur < sizeof(struct ip6_ext))
+    {
+      nexthdr = IPPROTO_NONE;
+      break;
+    }
+    ip6_ext = (struct ip6_ext *)cur;
+
+    if (nexthdr == IPPROTO_FRAGMENT)
+    {
+      uint16_t *frag_off;
+
+/* No room for full fragment header, bad packet. */
+      if (pktb_data(pktb) + pktb_len(pktb) - cur < sizeof(struct ip6_frag))
+      {
+        nexthdr = IPPROTO_NONE;
+        break;
+      }
+
+      frag_off = (uint16_t *)cur + offsetof(struct ip6_frag, ip6f_offlg);
+
+/* Fragment offset is only 13 bits long. */
+      if (htons(*frag_off & ~0x7))
+      {
+/* Not the first fragment, it does not contain
+ * any headers.
+ */
+        nexthdr = IPPROTO_NONE;
+        break;
+      }
+      hdrlen = sizeof(struct ip6_frag);
+    }
+    else if (nexthdr == IPPROTO_AH)
+      hdrlen = (ip6_ext->ip6e_len + 2) << 2;
+    else
+      hdrlen = (ip6_ext->ip6e_len + 1) << 3;
+
+    nexthdr = ip6_ext->ip6e_nxt;
+    cur += hdrlen;
+  }
+  if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
+  {
+    *proto = nexthdr;
+    return true;
+  }                                /* if (nexthdr == ... ) */
+  return false;
+}                                  /* ip6_get_proto() */
