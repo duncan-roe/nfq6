@@ -30,7 +30,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 23
+#define NUM_TESTS 22
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -141,32 +141,6 @@ main(int argc, char *argv[])
     fputs("Test 7 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[7]) */
-  if (tests[22])
-    my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
-  else
-    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
-  if (tests[13])
-  {
-    mangler = tests[22] ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
-    myP = "TCP";
-    myPROTO = IPPROTO_TCP;
-    my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
-    my_xxp_get_payload =
-      (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
-    my_xxp_get_payload_len =
-      (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
-  }                                /* if (tests[13]) */
-  else
-  {
-    mangler = tests[22] ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
-    myP = "UDP";
-    myPROTO = IPPROTO_UDP;
-    my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
-    my_xxp_get_payload =
-      (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
-    my_xxp_get_payload_len =
-      (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
-  }                                /* if (tests[13]) else */
   if (tests[19])
   {
     fputs("Test 19 is not available\n", stderr);
@@ -411,7 +385,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   struct tcphdr *tcph;
   struct ip6_hdr *ip6h;
   struct ip_hdr *ip4h;
-  void **iphp = tests[22] ? (void **)&ip4h : (void **)&ip6h;
+  void **iphp;
   void **xxph = tests[13] ? (void **)&tcph : (void **)&udph;
   char erbuf[4096];
   bool normal = !tests[16];        /* Don't print record structure */
@@ -422,6 +396,8 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   struct nlattr *attr[NFQA_MAX + 1] = { };
   char *errfunc;
   char pb[pktb_head_size()];
+  uint16_t nbo_proto;
+  bool is_IPv4;
 
   if (nfq_nlmsg_parse(nlh, attr) < 0)
   {
@@ -467,7 +443,36 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   id = ntohl(ph->packet_id);
   nc += snprintf(record_buf + nc, sizeof record_buf - nc,
     "packet received (id=%u hw=0x%04x hook=%u, payload len %u", id,
-    ntohs(ph->hw_protocol), ph->hook, plen);
+    nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
+
+  is_IPv4 = nbo_proto == ETH_P_IP;
+  iphp = is_IPv4 ? (void **)&ip4h : (void **)&ip6h;
+  if (is_IPv4)
+    my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
+  else
+    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
+  if (tests[13])
+  {
+    mangler = is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
+    myP = "TCP";
+    myPROTO = IPPROTO_TCP;
+    my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
+    my_xxp_get_payload =
+      (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
+    my_xxp_get_payload_len =
+      (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
+  }                                /* if (tests[13]) */
+  else
+  {
+    mangler = is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
+    myP = "UDP";
+    myPROTO = IPPROTO_UDP;
+    my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
+    my_xxp_get_payload =
+      (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
+    my_xxp_get_payload_len =
+      (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
+  }                                /* if (tests[13]) else */
 
 /*
  * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
@@ -490,7 +495,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   }                                /* if (!normal) */
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
-/* AF_INET6 and AF_INET work the same, no need to look at tests[22] */
+/* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
 #define EXTRA 255
   if (tests[21])
   {
@@ -509,18 +514,18 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   }                                /* if (!pktb) */
 
   if (!(*iphp = my_ipy_get_hdr(pktb)))
-    GIVE_UP2("Malformed IPv%c\n", tests[22] ? '4' : '6');
+    GIVE_UP2("Malformed IPv%c\n", is_IPv4 ? '4' : '6');
 
-  if (tests[22])
+  if (is_IPv4)
   {
     if (nfq_ip_set_transport_header(pktb, *iphp))
       GIVE_UP("No payload found\n");
-  }                                /* if (tests[22]) */
+  }                                /* if (is_IPv4) */
   else
   {
     if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
       GIVE_UP2("No %s payload found\n", myP);
-  }                                /* if (tests[22]) else */
+  }                                /* if (is_IPv4) else */
   if (!(*xxph = my_xxp_get_hdr(pktb)))
     GIVE_UP2("Packet too short to get %s header\n", myP);
   if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
@@ -616,6 +621,5 @@ usage(void)
     "   19: n/a\n"                 /*  */
     "   20: Set 16MB kernel socket buffer\n" /*  */
     "   21: Use pktb_setup_raw\n"  /*  */
-    "   22: Use IPv4\n"            /*  */
     );
 }                                  /* static void usage(void) */
