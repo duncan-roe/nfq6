@@ -68,7 +68,7 @@ static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 
 /* Static prototypes */
 
-static bool ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto);
+static uint8_t ip6_get_proto(struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
@@ -450,17 +450,20 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
 
   is_IPv4 = nbo_proto == ETH_P_IP;
-  iphp = is_IPv4 ? (void **)&ip4h : (void **)&ip6h;
   if (is_IPv4)
+  {
     my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
-  else
-    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
-
-/* Determine if UDP or TCP */
-  if (is_IPv4)
+    iphp = (void **)&ip4h;
     myPROTO = ((struct iphdr *)payload)->protocol;
-  else if (!ip6_get_proto((struct ip6_hdr *)payload, &myPROTO))
-    GIVE_UP("Can't determine if TCP or UDP\n");
+  }                                /* if (is_IPv4) */
+  else
+  {
+    if (nbo_proto != ETH_P_IPV6)
+      GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n", nbo_proto);
+    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
+    iphp = (void **)&ip6h;
+    myPROTO = ip6_get_proto((struct ip6_hdr *)payload);
+  }                                /* if (is_IPv4) else */
 
 /* Speedup: skip setting pointers if L3 & L4 protos same as last time */
 /* (usual case) */
@@ -491,7 +494,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
         (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
     }                              /* else if (myPROTO == IPPROTO_UDP) */
     else
-      GIVE_UP2("Unrecognised L4 protocol: 0x%02x\n", myPROTO);
+      GIVE_UP2("Unrecognised L4 protocol: 0x%02hhx\n", myPROTO);
   }                                /* if (!(is_IPv4 == was_IPv4 && ... */
 
 /*
@@ -648,18 +651,18 @@ usage(void)
 
 /* ****************************** ip6_get_proto ***************************** */
 
-static bool
-ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto)
+static uint8_t
+ip6_get_proto(struct ip6_hdr *ip6h)
 {
 /* This code is a copy of nfq_ip6_set_transport_header(), modified to return the
- * upper-layer protocol (if supported) instead. */
+ * upper-layer protocol instead. */
 
   uint8_t nexthdr = ip6h->ip6_nxt;
   uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
 
 /* Speedup: save 4 compares in the usual case (no extension headers) */
   if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
-    goto have_proto;
+    return nexthdr;          /* Don't like this, but it saves an indent level */
 
   while (nexthdr == IPPROTO_HOPOPTS ||
     nexthdr == IPPROTO_ROUTING ||
@@ -713,11 +716,5 @@ ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto)
     nexthdr = ip6_ext->ip6e_nxt;
     cur += hdrlen;
   }
-  if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
-  {
-  have_proto:
-    *proto = nexthdr;
-    return true;
-  }                                /* if (nexthdr == ... ) */
-  return false;
+  return nexthdr;
 }                                  /* ip6_get_proto() */
