@@ -64,7 +64,7 @@ static socklen_t buffersize = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof buffersize, read_size = 0;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 static char *myP;
-static uint8_t myPROTO;
+static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 
 /* Static prototypes */
 
@@ -149,11 +149,6 @@ main(int argc, char *argv[])
     fputs("Test 13 is not available\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[13]) */
-  if (tests[19])
-  {
-    fputs("Test 19 is not available\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[19]) */
 
   setlinebuf(stdout);
 
@@ -389,12 +384,12 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   uint8_t *xxp_payload;
   unsigned int xxp_payload_len;
   bool accept = true;
-  struct udphdr *udph;
-  struct tcphdr *tcph;
-  struct ip6_hdr *ip6h;
-  struct iphdr *ip4h;
-  void **iphp;
-  void **xxph = tests[13] ? (void **)&tcph : (void **)&udph;
+  static struct udphdr *udph;
+  static struct tcphdr *tcph;
+  static struct ip6_hdr *ip6h;
+  static struct iphdr *ip4h;
+  static void **iphp;
+  static void **xxph;
   char erbuf[4096];
   bool normal = !tests[16];        /* Don't print record structure */
   char record_buf[160];
@@ -406,6 +401,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   char pb[pktb_head_size()];
   uint16_t nbo_proto;
   bool is_IPv4;
+  static bool was_IPv4;
 
   if (nfq_nlmsg_parse(nlh, attr) < 0)
   {
@@ -462,33 +458,41 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 
 /* Determine if UDP or TCP */
   if (is_IPv4)
-    myPROTO=((struct iphdr *)payload)->protocol;
+    myPROTO = ((struct iphdr *)payload)->protocol;
   else if (!ip6_get_proto((struct ip6_hdr *)payload, &myPROTO))
-      GIVE_UP("Can't determine if TCP or UDP\n");
-  if (myPROTO == IPPROTO_TCP)
+    GIVE_UP("Can't determine if TCP or UDP\n");
+
+/* Speedup: skip setting pointers if L3 & L4 protos same as last time */
+/* (usual case) */
+  if (!(is_IPv4 == was_IPv4 && myPROTO == myPreviousPROTO))
   {
-    xxph = (void **)&tcph;
-    mangler = is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
-    myP = "TCP";
-    my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
-    my_xxp_get_payload =
-      (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
-    my_xxp_get_payload_len =
-      (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
-  }                                /* if (myPROTO == IPPROTO_TCP) */
-  else if (myPROTO == IPPROTO_UDP)
-  {
-    xxph = (void **)&udph;
-    mangler = is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
-    myP = "UDP";
-    my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
-    my_xxp_get_payload =
-      (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
-    my_xxp_get_payload_len =
-      (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
-  }                                /* else if (myPROTO == IPPROTO_UDP) */
-  else
-    GIVE_UP2("Unrecognised l4 protocol: %d\n", myPROTO);
+    was_IPv4 = is_IPv4;
+    myPreviousPROTO = myPROTO;
+    if (myPROTO == IPPROTO_TCP)
+    {
+      xxph = (void **)&tcph;
+      mangler = is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
+      myP = "TCP";
+      my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
+      my_xxp_get_payload =
+        (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
+      my_xxp_get_payload_len =
+        (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
+    }                              /* if (myPROTO == IPPROTO_TCP) */
+    else if (myPROTO == IPPROTO_UDP)
+    {
+      xxph = (void **)&udph;
+      mangler = is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
+      myP = "UDP";
+      my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
+      my_xxp_get_payload =
+        (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
+      my_xxp_get_payload_len =
+        (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
+    }                              /* else if (myPROTO == IPPROTO_UDP) */
+    else
+      GIVE_UP2("Unrecognised L4 protocol: 0x%02x\n", myPROTO);
+  }                                /* if (!(is_IPv4 == was_IPv4 && ... */
 
 /*
  * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
@@ -561,7 +565,8 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     xxp_payload_len -= 2;
   }                                /* tests[9] */
 
-  if (tests[10] && (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
+  if (tests[10] && (myPROTO == IPPROTO_UDP || tests[19]) &&
+    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
   {
     if (mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
       xxp_payload_len += 4;
@@ -575,7 +580,8 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     xxp_payload_len -= 2;
   }
 
-  if (tests[12] && (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
+  if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
+    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
   {
     if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
       xxp_payload_len += 4;
@@ -625,16 +631,16 @@ usage(void)
     "    7: n/a\n"                 /*  */
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
     "    9: Replace 1st ASD by F\n" /*  */
-    "   10: Replace 1st QWE by RTYUIOP\n" /*  */
+    "   10: Replace 1st QWE by RTYUIOP (UDP packets only)\n" /*  */
     "   11: Replace 2nd ASD by G\n" /*  */
-    "   12: Replace 2nd QWE by MNBVCXZ\n" /*  */
+    "   12: Replace 2nd QWE by MNBVCXZ (UDP packets only)\n" /*  */
     "   13: n/a\n"                 /*  */
     "   14: Report EINTR if we get it\n" /*  */
     "   15: Log netlink packets with no checksum\n" /*  */
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-    "   19: n/a\n"                 /*  */
+    "   19: Enable tests 10&12 for TCP (not recommended)\n" /*  */
     "   20: Set 16MB kernel socket buffer\n" /*  */
     "   21: Use pktb_setup_raw\n"  /*  */
     );
@@ -650,6 +656,10 @@ ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto)
 
   uint8_t nexthdr = ip6h->ip6_nxt;
   uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
+
+/* Speedup: save 4 compares in the usual case (no extension headers) */
+  if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
+    goto have_proto;
 
   while (nexthdr == IPPROTO_HOPOPTS ||
     nexthdr == IPPROTO_ROUTING ||
@@ -705,6 +715,7 @@ ip6_get_proto(struct ip6_hdr *ip6h, uint8_t *proto)
   }
   if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
   {
+  have_proto:
     *proto = nexthdr;
     return true;
   }                                /* if (nexthdr == ... ) */
