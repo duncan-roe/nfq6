@@ -32,7 +32,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 22
+#define NUM_TESTS 20
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -139,16 +139,6 @@ main(int argc, char *argv[])
     fputs("Missing alternate queue number for test 4\n", stderr);
     exit(EXIT_FAILURE);
   }                                /* if (tests[4] && !alternate_queue) */
-  if (tests[7])
-  {
-    fputs("Test 7 is not available\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[7]) */
-  if (tests[13])
-  {
-    fputs("Test 13 is not available\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[13]) */
 
   setlinebuf(stdout);
 
@@ -166,13 +156,13 @@ main(int argc, char *argv[])
   }
   portid = mnl_socket_get_portid(nl);
 
-  if (tests[20])
+  if (tests[13])
   {
     if (setsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
       &buffersize, sizeof(socklen_t)) == -1)
       fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n", strerror(errno),
         buffersize);
-  }                                /* if (tests[20]) */
+  }                                /* if (tests[13]) */
   getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
     &socklen);
   printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
@@ -520,16 +510,16 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 /* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
 #define EXTRA 255
-  if (tests[21])
+  if (tests[7])
   {
     pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
     errfunc = "pktb_setup_raw";
-  }                                /* if (tests[21]) */
+  }                                /* if (tests[7]) */
   else
   {
     pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
     errfunc = "pktb_alloc";
-  }                                /* if (!tests[21] else */
+  }                                /* if (!tests[7] else */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
@@ -602,7 +592,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 send_verdict:
   nfq_send_verdict(ntohs(nfg->res_id), id, accept);
 
-  if (!tests[21])
+  if (!tests[7])
     pktb_free(pktb);
 
   return MNL_CB_OK;
@@ -631,21 +621,19 @@ usage(void)
     "    5: Force on test 4 and specify BYPASS\n" /*  */
     "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /*  */
     " (e.g. q\\r\\n)\n"            /*  */
-    "    7: n/a\n"                 /*  */
+    "    7: Use pktb_setup_raw\n"  /*  */
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
     "    9: Replace 1st ASD by F\n" /*  */
     "   10: Replace 1st QWE by RTYUIOP (UDP packets only)\n" /*  */
     "   11: Replace 2nd ASD by G\n" /*  */
     "   12: Replace 2nd QWE by MNBVCXZ (UDP packets only)\n" /*  */
-    "   13: n/a\n"                 /*  */
+    "   13: Set 16MB kernel socket buffer\n" /*  */
     "   14: Report EINTR if we get it\n" /*  */
     "   15: Log netlink packets with no checksum\n" /*  */
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
     "   19: Enable tests 10&12 for TCP (not recommended)\n" /*  */
-    "   20: Set 16MB kernel socket buffer\n" /*  */
-    "   21: Use pktb_setup_raw\n"  /*  */
     );
 }                                  /* static void usage(void) */
 
