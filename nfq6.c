@@ -288,7 +288,7 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
   if (tests[1] && !done)
   {
     if (packet_mark == 0xfaceb00c)
-      nfq_nlmsg_verdict_put(nlh, id, NF_STOP);
+      nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
     else
     {
       nfq_nlmsg_verdict_put_mark(nlh, 0xfaceb00c);
@@ -614,7 +614,7 @@ usage(void)
     "NF_REPEAT\n"                  /*  */
     "    1: If packet mark is not 0xfaceb00c, set it to that and give " /*  */
     "verdict NF_REPEAT\n"          /*  */
-    "       If packet mark *is* 0xfaceb00c, give verdict NF_STOP\n" /*  */
+    "       If packet mark *is* 0xfaceb00c, accept the packet\n" /*  */
     "    2: Allow ENOBUFS to happen; treat as harmless when it does\n" /*  */
     "    3: Configure NFQA_CFG_F_FAIL_OPEN\n" /*  */
     "    4: Send packets to alternate -a queue\n" /*  */
