@@ -232,17 +232,8 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
   struct nlmsghdr *nlh;
   bool done = false;
-  int iovidx;
-  struct iovec iov[4];
-  int32_t padbuf;
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
-
-  if (tests[8])
-  {
-    iov[0].iov_base = nlh;
-    iovidx = 0;
-  }                                /* if (tests[8]) */
 
   if (!accept)
   {
@@ -250,33 +241,6 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
     goto send_verdict;
   }                                /* if (!accept) */
 
-  if (pktb_mangled(pktb))
-  {
-    if (tests[8])
-    {
-      struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
-      size_t len = pktb_len(pktb);
-      uint16_t payload_len = MNL_ALIGN(sizeof(struct nlattr)) + len;
-      int pad;
-
-      attrib->nla_type = NFQA_PAYLOAD;
-      attrib->nla_len = payload_len;
-      nlh->nlmsg_len += sizeof(struct nlattr);
-      iov[iovidx].iov_len = nlh->nlmsg_len;
-      iov[++iovidx].iov_base = pktb_data(pktb);
-      iov[iovidx].iov_len = len;
-      pad = MNL_ALIGN(len) - len;
-      if (pad)
-      {
-        padbuf = 0;
-        iov[++iovidx].iov_base = &padbuf;
-        iov[iovidx].iov_len = pad;
-      }                            /* if (pad) */
-      iov[++iovidx].iov_base = (uint8_t *)iov[0].iov_base + iov[0].iov_len;
-    }                              /* if (tests[8]) */
-    else
-      nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
-  }                                /* if (pktb_mangled(pktb)) */
 
   if (tests[0] && !packet_mark)
   {
@@ -308,44 +272,46 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
   if (!done)
     nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
 
-send_verdict:
-  if (tests[8])
+  if (pktb_mangled(pktb) && tests[8])
   {
+    struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
+    size_t len = pktb_len(pktb);
+    struct iovec iov[2];
     const struct msghdr msg = {
       .msg_name = &snl,
       .msg_namelen = sizeof snl,
       .msg_iov = iov,
-      .msg_iovlen = iovidx + (iov[iovidx].iov_len ? 1 : 0),
+      .msg_iovlen = 2,
       .msg_control = NULL,
       .msg_controllen = 0,
       .msg_flags = 0,
     };                             /* const struct msghdr msg = */
 
-    if (iovidx)
-    {
-      int i;
-
-      iov[iovidx].iov_len = nlh->nlmsg_len - iov[0].iov_len;
-      for (i = 1; i < iovidx; i++)
-        nlh->nlmsg_len += iov[i].iov_len;
-    }                              /* if (iovidx) */
-    else
-      iov[0].iov_len = nlh->nlmsg_len;
-
+    attrib->nla_type = NFQA_PAYLOAD;
+    attrib->nla_len = sizeof(struct nlattr) + len;
+    nlh->nlmsg_len += sizeof(struct nlattr);
+    iov[0].iov_base = nlh;
+    iov[0].iov_len = nlh->nlmsg_len;
+    iov[1].iov_base = pktb_data(pktb);
+    iov[1].iov_len = len;
+    nlh->nlmsg_len += len;
     if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0)
     {
       perror("sendmsg");
       exit(EXIT_FAILURE);
     }                     /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
-  }                                /* if (tests[8]) */
+  }                                /* if (pktb_mangled(pktb) && tests[8]) */
   else
   {
+    if (pktb_mangled(pktb))
+      nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
+  send_verdict:
     if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
     {
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
-    }
-  }                                /* if (tests[8]) else */
+    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
+  }                                /* if (pktb_mangled(pktb) && tests[8] else */
   if (quit)
     exit(0);
 }
