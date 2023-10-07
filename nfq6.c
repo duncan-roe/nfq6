@@ -450,7 +450,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
         (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
     }                              /* else if (myPROTO == IPPROTO_UDP) */
     else
-      GIVE_UP2("Unrecognised L4 protocol: 0x%02hhx\n", myPROTO);
+      GIVE_UP2("Unrecognised L4 protocol: 0x%02hhu\n", myPROTO);
   }                                /* if (!(is_IPv4 == was_IPv4 && ... */
 
 /*
