@@ -68,7 +68,7 @@ static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 
 /* Static prototypes */
 
-static uint8_t ip6_get_proto(struct ip6_hdr *ip6h);
+static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
@@ -418,7 +418,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n", nbo_proto);
     my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
     iphp = (void **)&ip6h;
-    myPROTO = ip6_get_proto((struct ip6_hdr *)payload);
+    myPROTO = ip6_get_proto(nlh, (struct ip6_hdr *)payload);
   }                                /* if (is_IPv4) else */
 
 /* Speedup: skip setting pointers if L3 & L4 protos same as last time */
@@ -450,7 +450,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
         (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
     }                              /* else if (myPROTO == IPPROTO_UDP) */
     else
-      GIVE_UP2("Unrecognised L4 protocol: 0x%02hhu\n", myPROTO);
+      GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
   }                                /* if (!(is_IPv4 == was_IPv4 && ... */
 
 /*
@@ -606,13 +606,14 @@ usage(void)
 /* ****************************** ip6_get_proto ***************************** */
 
 static uint8_t
-ip6_get_proto(struct ip6_hdr *ip6h)
+ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 {
 /* This code is a copy of nfq_ip6_set_transport_header(), modified to return the
  * upper-layer protocol instead. */
 
   uint8_t nexthdr = ip6h->ip6_nxt;
   uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
+  const uint8_t *pkt_tail = (const uint8_t *)nlh + nlh->nlmsg_len;
 
 /* Speedup: save 4 compares in the usual case (no extension headers) */
   if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
@@ -631,7 +632,7 @@ ip6_get_proto(struct ip6_hdr *ip6h)
     if (nexthdr == IPPROTO_NONE)
       break;
 /* No room for extension, bad packet. */
-    if (pktb_data(pktb) + pktb_len(pktb) - cur < sizeof(struct ip6_ext))
+    if (pkt_tail - cur < sizeof(struct ip6_ext))
     {
       nexthdr = IPPROTO_NONE;
       break;
@@ -640,19 +641,16 @@ ip6_get_proto(struct ip6_hdr *ip6h)
 
     if (nexthdr == IPPROTO_FRAGMENT)
     {
-      uint16_t *frag_off;
 
 /* No room for full fragment header, bad packet. */
-      if (pktb_data(pktb) + pktb_len(pktb) - cur < sizeof(struct ip6_frag))
+      if (pkt_tail - cur < sizeof(struct ip6_frag))
       {
         nexthdr = IPPROTO_NONE;
         break;
       }
 
-      frag_off = (uint16_t *)cur + offsetof(struct ip6_frag, ip6f_offlg);
-
 /* Fragment offset is only 13 bits long. */
-      if (htons(*frag_off & ~0x7))
+      if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) & ~0x7)
       {
 /* Not the first fragment, it does not contain
  * any headers.
