@@ -108,7 +108,6 @@ main(int argc, char *argv[])
         usage();
         return 0;
 
-
       case 't':
         ret = atoi(optarg);
         if (ret < 0 || ret >= NUM_TESTS)
@@ -240,7 +239,6 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
     nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
     goto send_verdict;
   }                                /* if (!accept) */
-
 
   if (tests[0] && !packet_mark)
   {
@@ -392,7 +390,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       nc += snprintf(record_buf, sizeof record_buf, "%s", "truncated ");
       normal = false;
     }                              /* if (orig_len != plen) */
-  }
+  }                                /* if (attr[NFQA_CAP_LEN]) */
 
   if (skbinfo & NFQA_SKB_GSO)
   {
@@ -548,7 +546,6 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
   }                     /* if (tests[12] && (p = strstr(xxp_payload, "QWE"))) */
 
-
   if (tests[17] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
     mangler(pktb, p - xxp_payload, 3, "VBN", 3);
 
@@ -586,7 +583,7 @@ usage(void)
     "    4: Send packets to alternate -a queue\n" /*  */
     "    5: Force on test 4 and specify BYPASS\n" /*  */
     "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /*  */
-    " (e.g. q\\r\\n)\n"            /*  */
+    " (e.g. q\\n)\n"               /*  */
     "    7: Use pktb_setup_raw\n"  /*  */
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
     "    9: Replace 1st ASD by F\n" /*  */
@@ -599,7 +596,7 @@ usage(void)
     "   16: Log all netlink packets\n" /*  */
     "   17: Replace 1st ZXC by VBN\n" /*  */
     "   18: Replace 2nd ZXC by VBN\n" /*  */
-    "   19: Enable tests 10&12 for TCP (not recommended)\n" /*  */
+    "   19: Enable tests 10 & 12 for TCP (not recommended)\n" /*  */
     );
 }                                  /* static void usage(void) */
 
@@ -617,7 +614,7 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 
 /* Speedup: save 4 compares in the usual case (no extension headers) */
   if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
-    return nexthdr;          /* Don't like this, but it saves an indent level */
+    return nexthdr;                /* Ugly but it saves an indent level */
 
   while (nexthdr == IPPROTO_HOPOPTS ||
     nexthdr == IPPROTO_ROUTING ||
@@ -652,9 +649,8 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 /* Fragment offset is only 13 bits long. */
       if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) & ~0x7)
       {
-/* Not the first fragment, it does not contain
- * any headers.
- */
+
+/* Not the first fragment, it does not contain any headers. */
         nexthdr = IPPROTO_NONE;
         break;
       }
