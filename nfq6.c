@@ -43,10 +43,9 @@
 
 /* Typedefs */
 
-typedef enum bool
-{
-  false,
-  true
+typedef enum bool {
+	false,
+	true
 } bool;
 
 /* Static Variables */
@@ -57,12 +56,14 @@ static char nlrxbuf[0xffff + 4096];
 static char nltxbuf[sizeof nlrxbuf];
 static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
+
 static uint32_t packet_mark;
 static int alternate_queue = 0;
 static bool quit = false;
 static socklen_t buffersize = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof buffersize, read_size = 0;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
+
 static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 
@@ -73,7 +74,7 @@ static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
 static int (*mangler)(struct pkt_buff *, unsigned int, unsigned int,
-  const char *, unsigned int);
+		      const char *, unsigned int);
 static void *(*my_xxp_get_hdr)(struct pkt_buff *);
 static void *(*my_xxp_get_payload)(void *, struct pkt_buff *);
 static unsigned int (*my_xxp_get_payload_len)(void *, struct pkt_buff *);
@@ -81,239 +82,221 @@ static void *(*my_ipy_get_hdr)(struct pkt_buff *);
 
 /* ********************************** main ********************************** */
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-  struct nlmsghdr *nlh;
-  int ret;
-  unsigned int portid, queue_num;
-  int i;
-  size_t sperrume;                 /* Spare room (strine) */
+	struct nlmsghdr *nlh;
+	int ret;
+	unsigned int portid, queue_num;
+	int i;
+	size_t sperrume;         /* Spare room (strine) */
 
-  while ((i = getopt(argc, argv, "a:ht:")) != -1)
-  {
-    switch (i)
-    {
-      case 'a':
-        alternate_queue = atoi(optarg);
-        if (alternate_queue <= 0 || alternate_queue > 0xffff)
-        {
-          fprintf(stderr, "Alternate queue number %d is out of range\n",
-            alternate_queue);
-          exit(EXIT_FAILURE);
-        }            /* if (alternate_queue <= 0 || alternate_queue > 0xffff) */
-        break;
+	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
+		switch (i) {
+		case 'a':
+			alternate_queue = atoi(optarg);
+			if (alternate_queue <= 0 || alternate_queue > 0xffff) {
+				fprintf(stderr,
+					"Alternate queue number %d is out of "
+					"range\n",
+					alternate_queue);
+				exit(EXIT_FAILURE);
+			}        /* if (alternate_queue <= 0 || ... )*/
+			break;
 
-      case 'h':
-        usage();
-        return 0;
+		case 'h':
+			usage();
+			return 0;
 
+		case 't':
+			ret = atoi(optarg);
+			if (ret < 0 || ret >= NUM_TESTS) {
+				fprintf(stderr, "Test %d is out of range\n",
+					ret);
+				exit(EXIT_FAILURE);
+			}        /* if (ret < 0 || ret > NUM_TESTS) */
+			tests[ret] = true;
+			break;
 
-      case 't':
-        ret = atoi(optarg);
-        if (ret < 0 || ret >= NUM_TESTS)
-        {
-          fprintf(stderr, "Test %d is out of range\n", ret);
-          exit(EXIT_FAILURE);
-        }                          /* if (ret < 0 || ret > NUM_TESTS) */
-        tests[ret] = true;
-        break;
+		case '?':
+			exit(EXIT_FAILURE);
+		}                /* switch (i) */
+	}                        /* while () */
 
-      case '?':
-        exit(EXIT_FAILURE);
-    }                              /* switch (i) */
-  }                                /* while () */
+	if (argc == optind) {
+		fputs("Missing queue number\n", stderr);
+		exit(EXIT_FAILURE);
+	}
+	queue_num = atoi(argv[optind]);
 
-  if (argc == optind)
-  {
-    fputs("Missing queue number\n", stderr);
-    exit(EXIT_FAILURE);
-  }
-  queue_num = atoi(argv[optind]);
+	if (tests[5])
+		tests[4] = true;
 
-  if (tests[5])
-    tests[4] = true;
+	if (tests[4] && !alternate_queue) {
+		fputs("Missing alternate queue number for test 4\n", stderr);
+		exit(EXIT_FAILURE);
+	}                        /* if (tests[4] && !alternate_queue) */
 
-  if (tests[4] && !alternate_queue)
-  {
-    fputs("Missing alternate queue number for test 4\n", stderr);
-    exit(EXIT_FAILURE);
-  }                                /* if (tests[4] && !alternate_queue) */
+	setlinebuf(stdout);
 
-  setlinebuf(stdout);
+	nl = mnl_socket_open(NETLINK_NETFILTER);
+	if (nl == NULL) {
+		perror("mnl_socket_open");
+		exit(EXIT_FAILURE);
+	}
 
-  nl = mnl_socket_open(NETLINK_NETFILTER);
-  if (nl == NULL)
-  {
-    perror("mnl_socket_open");
-    exit(EXIT_FAILURE);
-  }
+	if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) {
+		perror("mnl_socket_bind");
+		exit(EXIT_FAILURE);
+	}
+	portid = mnl_socket_get_portid(nl);
 
-  if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0)
-  {
-    perror("mnl_socket_bind");
-    exit(EXIT_FAILURE);
-  }
-  portid = mnl_socket_get_portid(nl);
+	if (tests[13]) {
+		if (setsockopt
+		    (mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
+		     &buffersize, sizeof(socklen_t)) == -1)
+			fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
+				strerror(errno), buffersize);
+	}                        /* if (tests[13]) */
+	getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
+		   &socklen);
+	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
+	       read_size / (1024 * 1024));
 
-  if (tests[13])
-  {
-    if (setsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
-      &buffersize, sizeof(socklen_t)) == -1)
-      fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n", strerror(errno),
-        buffersize);
-  }                                /* if (tests[13]) */
-  getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
-    &socklen);
-  printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
-    read_size / (1024 * 1024));
+	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+	nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
 
-  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-  nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
+	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+		perror("mnl_socket_send");
+		exit(EXIT_FAILURE);
+	}
 
-  if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
-  {
-    perror("mnl_socket_send");
-    exit(EXIT_FAILURE);
-  }
+	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
-  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-  nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
+	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
+			 htonl(NFQA_CFG_F_GSO |
+			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
+			 htonl(NFQA_CFG_F_GSO |
+			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 
-  mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
-    htonl(NFQA_CFG_F_GSO | (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-  mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
-    htonl(NFQA_CFG_F_GSO | (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+		perror("mnl_socket_send");
+		exit(EXIT_FAILURE);
+	}
 
-  if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
-  {
-    perror("mnl_socket_send");
-    exit(EXIT_FAILURE);
-  }
+	/* ENOBUFS is signalled to userspace when packets were lost
+	 * on kernel side.  In most cases, userspace isn't interested
+	 * in this information, so turn it off.
+	 */
+	if (!tests[2])
+		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret,
+				      sizeof(int));
 
-/* ENOBUFS is signalled to userspace when packets were lost
- * on kernel side.  In most cases, userspace isn't interested
- * in this information, so turn it off.
- */
-  if (!tests[2])
-    mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
+	for (;;) {
+		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+		if (ret == -1) {
+			perror("mnl_socket_recvfrom");
+			if (errno == ENOBUFS)
+				continue;
+			exit(EXIT_FAILURE);
+		}
+		assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
+		sperrume = sizeof nlrxbuf - ret;
 
-  for (;;)
-  {
-    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
-    if (ret == -1)
-    {
-      perror("mnl_socket_recvfrom");
-      if (errno == ENOBUFS)
-        continue;
-      exit(EXIT_FAILURE);
-    }
-    assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
-    sperrume = sizeof nlrxbuf - ret;
+		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
+		if (ret < 0 && !(errno == EINTR || tests[14])) {
+			perror("mnl_cb_run");
+			if (errno != EINTR)
+				exit(EXIT_FAILURE);
+		}
+	}
 
-    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
-    if (ret < 0 && !(errno == EINTR || tests[14]))
-    {
-      perror("mnl_cb_run");
-      if (errno != EINTR)
-        exit(EXIT_FAILURE);
-    }
-  }
+	mnl_socket_close(nl);
 
-  mnl_socket_close(nl);
-
-  return 0;
+	return 0;
 }
 
 /* **************************** nfq_send_verdict **************************** */
 
-static void
-nfq_send_verdict(int queue_num, uint32_t id, bool accept)
+static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
-  struct nlmsghdr *nlh;
-  bool done = false;
+	struct nlmsghdr *nlh;
+	bool done = false;
 
-  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
+	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
 
-  if (!accept)
-  {
-    nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
-    goto send_verdict;
-  }                                /* if (!accept) */
+	if (!accept) {
+		nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
+		goto send_verdict;
+	}                        /* if (!accept) */
 
+	if (tests[0] && !packet_mark) {
+		nfq_nlmsg_verdict_put_mark(nlh, 0xbeef);
+		nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
+		done = true;
+	}                        /* if (tests[0] */
 
-  if (tests[0] && !packet_mark)
-  {
-    nfq_nlmsg_verdict_put_mark(nlh, 0xbeef);
-    nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
-    done = true;
-  }                                /* if (tests[0] */
+	if (tests[1] && !done) {
+		if (packet_mark == 0xfaceb00c) {
+			nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
+		} else {
+			nfq_nlmsg_verdict_put_mark(nlh, 0xfaceb00c);
+			nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
+		}                /* if (packet_mark == 0xfaceb00c) else */
+		done = true;
+	}                        /* if (tests[1] && !done) */
 
-  if (tests[1] && !done)
-  {
-    if (packet_mark == 0xfaceb00c)
-      nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
-    else
-    {
-      nfq_nlmsg_verdict_put_mark(nlh, 0xfaceb00c);
-      nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
-    }                              /* if (packet_mark == 0xfaceb00c) else */
-    done = true;
-  }                                /* if (tests[1] && !done) */
+	if (tests[4] && !done) {
+		nfq_nlmsg_verdict_put(nlh, id,
+				      NF_QUEUE_NR(alternate_queue) |
+				      (tests[5] ? NF_VERDICT_FLAG_QUEUE_BYPASS
+						: 0));
+		done = true;
+	}                        /* if (tests[4] && !done) */
 
-  if (tests[4] && !done)
-  {
-    nfq_nlmsg_verdict_put(nlh, id,
-      NF_QUEUE_NR(alternate_queue) | (tests[5] ? NF_VERDICT_FLAG_QUEUE_BYPASS :
-      0));
-    done = true;
-  }                                /* if (tests[4] && !done) */
+	if (!done)
+		nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
 
-  if (!done)
-    nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
+	if (pktb_mangled(pktb) && tests[8]) {
+		struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
+		size_t len = pktb_len(pktb);
+		struct iovec iov[2];
+		const struct msghdr msg = {
+			.msg_name = &snl,
+			.msg_namelen = sizeof snl,
+			.msg_iov = iov,
+			.msg_iovlen = 2,
+			.msg_control = NULL,
+			.msg_controllen = 0,
+			.msg_flags = 0,
+		};                /* const struct msghdr msg = */
 
-  if (pktb_mangled(pktb) && tests[8])
-  {
-    struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
-    size_t len = pktb_len(pktb);
-    struct iovec iov[2];
-    const struct msghdr msg = {
-      .msg_name = &snl,
-      .msg_namelen = sizeof snl,
-      .msg_iov = iov,
-      .msg_iovlen = 2,
-      .msg_control = NULL,
-      .msg_controllen = 0,
-      .msg_flags = 0,
-    };                             /* const struct msghdr msg = */
-
-    attrib->nla_type = NFQA_PAYLOAD;
-    attrib->nla_len = sizeof(struct nlattr) + len;
-    nlh->nlmsg_len += sizeof(struct nlattr);
-    iov[0].iov_base = nlh;
-    iov[0].iov_len = nlh->nlmsg_len;
-    iov[1].iov_base = pktb_data(pktb);
-    iov[1].iov_len = len;
-    nlh->nlmsg_len += len;
-    if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0)
-    {
-      perror("sendmsg");
-      exit(EXIT_FAILURE);
-    }                     /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
-  }                                /* if (pktb_mangled(pktb) && tests[8]) */
-  else
-  {
-    if (pktb_mangled(pktb))
-      nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb), pktb_len(pktb));
-  send_verdict:
-    if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
-    {
-      perror("mnl_socket_sendto");
-      exit(EXIT_FAILURE);
-    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
-  }                                /* if (pktb_mangled(pktb) && tests[8] else */
-  if (quit)
-    exit(0);
+		attrib->nla_type = NFQA_PAYLOAD;
+		attrib->nla_len = sizeof(struct nlattr) + len;
+		nlh->nlmsg_len += sizeof(struct nlattr);
+		iov[0].iov_base = nlh;
+		iov[0].iov_len = nlh->nlmsg_len;
+		iov[1].iov_base = pktb_data(pktb);
+		iov[1].iov_len = len;
+		nlh->nlmsg_len += len;
+		if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) {
+			perror("sendmsg");
+			exit(EXIT_FAILURE);
+		}         /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
+	}                        /* if (pktb_mangled(pktb) && tests[8]) */
+	else {
+		if (pktb_mangled(pktb))
+			nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb),
+						  pktb_len(pktb));
+ send_verdict:
+		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+			perror("mnl_socket_sendto");
+			exit(EXIT_FAILURE);
+		}      /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
+	}                        /* if (pktb_mangled(pktb) && tests[8] else */
+	if (quit)
+		exit(0);
 }
 
 /* ******************************** queue_cb ******************************** */
@@ -330,343 +313,324 @@ do {fputs(x, stderr); accept = false; goto send_verdict;} while (0)
 #define GIVE_UP2(x, y)\
 do {fprintf(stderr, x, y); accept = false; goto send_verdict;} while (0)
 
-static int
-queue_cb(const struct nlmsghdr *nlh, void *data)
+static int queue_cb(const struct nlmsghdr *nlh, void *data)
 {
-  struct nfqnl_msg_packet_hdr *ph = NULL;
-  uint32_t id = 0, skbinfo;
-  struct nfgenmsg *nfg;
-  uint8_t *payload;
-  uint8_t *xxp_payload;
-  unsigned int xxp_payload_len;
-  bool accept = true;
-  static struct udphdr *udph;
-  static struct tcphdr *tcph;
-  static struct ip6_hdr *ip6h;
-  static struct iphdr *ip4h;
-  static void **iphp;
-  static void **xxph;
-  char erbuf[4096];
-  bool normal = !tests[16];        /* Don't print record structure */
-  char record_buf[160];
-  int nc = 0;
-  uint16_t plen;
-  uint8_t *p;
-  struct nlattr *attr[NFQA_MAX + 1] = { };
-  char *errfunc;
-  char pb[pktb_head_size()];
-  uint16_t nbo_proto;
-  bool is_IPv4;
-  static bool was_IPv4;
+	struct nfqnl_msg_packet_hdr *ph = NULL;
+	uint32_t id = 0, skbinfo;
+	struct nfgenmsg *nfg;
+	uint8_t *payload;
+	uint8_t *xxp_payload;
+	unsigned int xxp_payload_len;
+	bool accept = true;
+	static struct udphdr *udph;
+	static struct tcphdr *tcph;
+	static struct ip6_hdr *ip6h;
+	static struct iphdr *ip4h;
+	static void **iphp;
+	static void **xxph;
+	char erbuf[4096];
+	bool normal = !tests[16]; /* Don't print record structure */
+	char record_buf[160];
+	int nc = 0;
+	uint16_t plen;
+	uint8_t *p;
+	struct nlattr *attr[NFQA_MAX + 1] = { };
+	char *errfunc;
+	char pb[pktb_head_size()];
+	uint16_t nbo_proto;
+	bool is_IPv4;
+	static bool was_IPv4;
 
-  if (nfq_nlmsg_parse(nlh, attr) < 0)
-  {
-    perror("problems parsing");
-    return MNL_CB_ERROR;
-  }
+	if (nfq_nlmsg_parse(nlh, attr) < 0) {
+		perror("problems parsing");
+		return MNL_CB_ERROR;
+	}
 
-  nfg = mnl_nlmsg_get_payload(nlh);
+	nfg = mnl_nlmsg_get_payload(nlh);
 
-  if (attr[NFQA_PACKET_HDR] == NULL)
-  {
-    fputs("metaheader not set\n", stderr);
-    return MNL_CB_ERROR;
-  }
+	if (attr[NFQA_PACKET_HDR] == NULL) {
+		fputs("metaheader not set\n", stderr);
+		return MNL_CB_ERROR;
+	}
 
-  ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
+	ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
 
-  plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
+	plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
 
-  payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
+	payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
 
-  packet_mark = attr[NFQA_MARK] ? ntohl(mnl_attr_get_u32(attr[NFQA_MARK])) : 0;
+	packet_mark =
+	    attr[NFQA_MARK] ? ntohl(mnl_attr_get_u32(attr[NFQA_MARK])) : 0;
 
-  skbinfo =
-    attr[NFQA_SKB_INFO] ? ntohl(mnl_attr_get_u32(attr[NFQA_SKB_INFO])) : 0;
+	skbinfo =
+	    attr[NFQA_SKB_INFO] ? ntohl(mnl_attr_get_u32(attr[NFQA_SKB_INFO])) :
+	    0;
 
-  if (attr[NFQA_CAP_LEN])
-  {
-    uint32_t orig_len = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
-    if (orig_len != plen)
-    {
-      nc += snprintf(record_buf, sizeof record_buf, "%s", "truncated ");
-      normal = false;
-    }                              /* if (orig_len != plen) */
-  }
+	if (attr[NFQA_CAP_LEN]) {
+		uint32_t orig_len = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
+		if (orig_len != plen) {
+			nc += snprintf(record_buf, sizeof record_buf, "%s",
+				       "truncated ");
+			normal = false;
+		}                /* if (orig_len != plen) */
+	}                        /* if (attr[NFQA_CAP_LEN]) */
 
-  if (skbinfo & NFQA_SKB_GSO)
-  {
-    nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s", "GSO ");
-    normal = false;
-  }                                /* if (skbinfo & NFQA_SKB_GSO) */
+	if (skbinfo & NFQA_SKB_GSO) {
+		nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s",
+			       "GSO ");
+		normal = false;
+	}                        /* if (skbinfo & NFQA_SKB_GSO) */
 
-  id = ntohl(ph->packet_id);
-  nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-    "packet received (id=%u hw=0x%04x hook=%u, payload len %u", id,
-    nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
+	id = ntohl(ph->packet_id);
+	nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+		       "packet received "
+		       "(id=%u hw=0x%04x hook=%u, payload len %u",
+		       id, nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
 
-  is_IPv4 = nbo_proto == ETH_P_IP;
-  if (is_IPv4)
-  {
-    my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
-    iphp = (void **)&ip4h;
-    myPROTO = ((struct iphdr *)payload)->protocol;
-  }                                /* if (is_IPv4) */
-  else
-  {
-    if (nbo_proto != ETH_P_IPV6)
-      GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n", nbo_proto);
-    my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
-    iphp = (void **)&ip6h;
-    myPROTO = ip6_get_proto(nlh, (struct ip6_hdr *)payload);
-  }                                /* if (is_IPv4) else */
+	is_IPv4 = nbo_proto == ETH_P_IP;
+	if (is_IPv4) {
+		my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
+		iphp = (void **)&ip4h;
+		myPROTO = ((struct iphdr *)payload)->protocol;
+	}                        /* if (is_IPv4) */
+	else {
+		if (nbo_proto != ETH_P_IPV6)
+			GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n",
+				 nbo_proto);
+		my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
+		iphp = (void **)&ip6h;
+		myPROTO = ip6_get_proto(nlh, (struct ip6_hdr *)payload);
+	}                        /* if (is_IPv4) else */
 
 /* Speedup: skip setting pointers if L3 & L4 protos same as last time */
 /* (usual case) */
-  if (!(is_IPv4 == was_IPv4 && myPROTO == myPreviousPROTO))
-  {
-    was_IPv4 = is_IPv4;
-    myPreviousPROTO = myPROTO;
-    if (myPROTO == IPPROTO_TCP)
-    {
-      xxph = (void **)&tcph;
-      mangler = is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
-      myP = "TCP";
-      my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
-      my_xxp_get_payload =
-        (void *(*)(void *, struct pkt_buff *))nfq_tcp_get_payload;
-      my_xxp_get_payload_len =
-        (unsigned int (*)(void *, struct pkt_buff *))nfq_tcp_get_payload_len;
-    }                              /* if (myPROTO == IPPROTO_TCP) */
-    else if (myPROTO == IPPROTO_UDP)
-    {
-      xxph = (void **)&udph;
-      mangler = is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
-      myP = "UDP";
-      my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
-      my_xxp_get_payload =
-        (void *(*)(void *, struct pkt_buff *))nfq_udp_get_payload;
-      my_xxp_get_payload_len =
-        (unsigned int (*)(void *, struct pkt_buff *))nfq_udp_get_payload_len;
-    }                              /* else if (myPROTO == IPPROTO_UDP) */
-    else
-      GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
-  }                                /* if (!(is_IPv4 == was_IPv4 && ... */
+	if (!(is_IPv4 == was_IPv4 && myPROTO == myPreviousPROTO)) {
+		was_IPv4 = is_IPv4;
+		myPreviousPROTO = myPROTO;
+		if (myPROTO == IPPROTO_TCP) {
+			xxph = (void **)&tcph;
+			mangler =
+			    is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
+			myP = "TCP";
+			my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
+			my_xxp_get_payload =
+			    (void *(*)(void *, struct pkt_buff *))
+			    nfq_tcp_get_payload;
+			my_xxp_get_payload_len =
+			    (unsigned int (*)(void *, struct pkt_buff *))
+			    nfq_tcp_get_payload_len;
+		}                /* if (myPROTO == IPPROTO_TCP) */
+		else if (myPROTO == IPPROTO_UDP) {
+			xxph = (void **)&udph;
+			mangler =
+			    is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
+			myP = "UDP";
+			my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
+			my_xxp_get_payload =
+			    (void *(*)(void *, struct pkt_buff *))
+			    nfq_udp_get_payload;
+			my_xxp_get_payload_len =
+			    (unsigned int (*)(void *, struct pkt_buff *))
+			    nfq_udp_get_payload_len;
+		}                /* else if (myPROTO == IPPROTO_UDP) */
+		else
+			GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
+	}                        /* if (!(is_IPv4 == was_IPv4 && ... */
 
-/*
- * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
+/* ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
  * The application should behave as if the checksums are correct.
- *
  * If these packets are later forwarded/sent out, the checksums will
- * be corrected by kernel/hardware.
- */
-  if (skbinfo & NFQA_SKB_CSUMNOTREADY)
-  {
-    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", checksum not ready");
-    if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
-      normal = false;
-  }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
-  if (!normal)
-  {
-    snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
-    printf("%s", record_buf);
-  }                                /* if (!normal) */
+ * be corrected by kernel/hardware. */
+	if (skbinfo & NFQA_SKB_CSUMNOTREADY) {
+		nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+			       ", checksum not ready");
+		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
+			normal = false;
+	}                        /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
+	if (!normal) {
+		snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
+		printf("%s", record_buf);
+	}                        /* if (!normal) */
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 /* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
 #define EXTRA 255
-  if (tests[7])
-  {
-    pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
-    errfunc = "pktb_setup_raw";
-  }                                /* if (tests[7]) */
-  else
-  {
-    pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
-    errfunc = "pktb_alloc";
-  }                                /* if (!tests[7] else */
-  if (!pktb)
-  {
-    snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
-    GIVE_UP(erbuf);
-  }                                /* if (!pktb) */
+	if (tests[7]) {
+		pktb = pktb_setup_raw(pb, AF_INET6, payload, plen,
+				      *(size_t *)data);
+		errfunc = "pktb_setup_raw";
+	}                        /* if (tests[7]) */
+	else {
+		pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
+		errfunc = "pktb_alloc";
+	}                        /* if (!tests[7] else */
+	if (!pktb) {
+		snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno),
+			 errfunc);
+		GIVE_UP(erbuf);
+	}                        /* if (!pktb) */
 
-  if (!(*iphp = my_ipy_get_hdr(pktb)))
-    GIVE_UP2("Malformed IPv%c\n", is_IPv4 ? '4' : '6');
+	if (!(*iphp = my_ipy_get_hdr(pktb)))
+		GIVE_UP2("Malformed IPv%c\n", is_IPv4 ? '4' : '6');
 
-  if (is_IPv4)
-  {
-    if (nfq_ip_set_transport_header(pktb, *iphp))
-      GIVE_UP("No payload found\n");
-  }                                /* if (is_IPv4) */
-  else
-  {
-    if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
-      GIVE_UP2("No %s payload found\n", myP);
-  }                                /* if (is_IPv4) else */
-  if (!(*xxph = my_xxp_get_hdr(pktb)))
-    GIVE_UP2("Packet too short to get %s header\n", myP);
-  if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
-    GIVE_UP2("Packet too short to get %s payload\n", myP);
-  xxp_payload_len = my_xxp_get_payload_len(*xxph, pktb);
+	if (is_IPv4) {
+		if (nfq_ip_set_transport_header(pktb, *iphp))
+			GIVE_UP("No payload found\n");
+	}                        /* if (is_IPv4) */
+	else {
+		if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
+			GIVE_UP2("No %s payload found\n", myP);
+	}                        /* if (is_IPv4) else */
+	if (!(*xxph = my_xxp_get_hdr(pktb)))
+		GIVE_UP2("Packet too short to get %s header\n", myP);
+	if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
+		GIVE_UP2("Packet too short to get %s payload\n", myP);
+	xxp_payload_len = my_xxp_get_payload_len(*xxph, pktb);
 
-  if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
-    isspace(xxp_payload[1]))
-  {
-    accept = false;                /* Drop this packet */
-    quit = true;                   /* Exit after giving verdict */
-  }                              /* if (tests[6] && strchr(xxp_payload, 'q')) */
+	if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
+	    isspace(xxp_payload[1])) {
+		accept = false;        /* Drop this packet */
+		quit = true;        /* Exit after giving verdict */
+	}                        /* if (tests[6] && strchr(xxp_payload, 'q')) */
 
-  if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3)))
-  {
-    mangler(pktb, p - xxp_payload, 3, "F", 1);
-    xxp_payload_len -= 2;
-  }                                /* tests[9] */
+	if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
+		mangler(pktb, p - xxp_payload, 3, "F", 1);
+		xxp_payload_len -= 2;
+	}                        /* tests[9] */
 
-  if (tests[10] && (myPROTO == IPPROTO_UDP || tests[19]) &&
-    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
-  {
-    if (mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
-      xxp_payload_len += 4;
-    else
-      fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
-  }                     /* if (tests[10] && (p = strstr(xxp_payload, "QWE"))) */
+	if (tests[10] && (myPROTO == IPPROTO_UDP || tests[19]) &&
+	    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3))) {
+		if (mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
+			xxp_payload_len += 4;
+		else
+			fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
+	}                        /* tests[10] */
 
-  if (tests[11] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3)))
-  {
-    mangler(pktb, p - xxp_payload, 3, "G", 1);
-    xxp_payload_len -= 2;
-  }
-
-  if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
-    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
-  {
-    if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
-      xxp_payload_len += 4;
-    else
-      fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
-  }                     /* if (tests[12] && (p = strstr(xxp_payload, "QWE"))) */
+	if (tests[11] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
+		mangler(pktb, p - xxp_payload, 3, "G", 1);
+		xxp_payload_len -= 2;
+	}                        /* tests[11] */
 
 
-  if (tests[17] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
-    mangler(pktb, p - xxp_payload, 3, "VBN", 3);
+	if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
+	    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3))) {
+		if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
+			xxp_payload_len += 4;
+		else
+			fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
+	}               /* if (tests[12] && (p = strstr(xxp_payload, "QWE"))) */
 
-  if (tests[18] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
-    mangler(pktb, p - xxp_payload, 3, "VBN", 3);
+	if (tests[17] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
+		mangler(pktb, p - xxp_payload, 3, "VBN", 3);
 
-send_verdict:
-  nfq_send_verdict(ntohs(nfg->res_id), id, accept);
+	if (tests[18] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
+		mangler(pktb, p - xxp_payload, 3, "VBN", 3);
 
-  if (!tests[7])
-    pktb_free(pktb);
+ send_verdict:
+	nfq_send_verdict(ntohs(nfg->res_id), id, accept);
 
-  return MNL_CB_OK;
+	if (!tests[7])
+		pktb_free(pktb);
+
+	return MNL_CB_OK;
 }
 
 /* ********************************** usage ********************************* */
 
-static void
-usage(void)
+static void usage(void)
 {
 /* N.B. Trailing empty comments are there to stop gnu indent joining lines */
-  puts("\nUsage: nfq6 [-a <alt q #>] " /*  */
-    "[-t <test #>],... queue_number\n" /*  */
-    "       nfq6 -h\n"             /*  */
-    "  -a <n>: Alternate queue for test 4\n" /*  */
-    "  -h: give this Help and exit\n" /*  */
-    "  -t <n>: do Test <n>. Tests are:\n" /*  */
-    "    0: If packet mark is zero, set it to 0xbeef and give verdict " /*  */
-    "NF_REPEAT\n"                  /*  */
-    "    1: If packet mark is not 0xfaceb00c, set it to that and give " /*  */
-    "verdict NF_REPEAT\n"          /*  */
-    "       If packet mark *is* 0xfaceb00c, accept the packet\n" /*  */
-    "    2: Allow ENOBUFS to happen; treat as harmless when it does\n" /*  */
-    "    3: Configure NFQA_CFG_F_FAIL_OPEN\n" /*  */
-    "    4: Send packets to alternate -a queue\n" /*  */
-    "    5: Force on test 4 and specify BYPASS\n" /*  */
-    "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /*  */
-    " (e.g. q\\r\\n)\n"            /*  */
-    "    7: Use pktb_setup_raw\n"  /*  */
-    "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
-    "    9: Replace 1st ASD by F\n" /*  */
-    "   10: Replace 1st QWE by RTYUIOP (UDP packets only)\n" /*  */
-    "   11: Replace 2nd ASD by G\n" /*  */
-    "   12: Replace 2nd QWE by MNBVCXZ (UDP packets only)\n" /*  */
-    "   13: Set 16MB kernel socket buffer\n" /*  */
-    "   14: Report EINTR if we get it\n" /*  */
-    "   15: Log netlink packets with no checksum\n" /*  */
-    "   16: Log all netlink packets\n" /*  */
-    "   17: Replace 1st ZXC by VBN\n" /*  */
-    "   18: Replace 2nd ZXC by VBN\n" /*  */
-    "   19: Enable tests 10&12 for TCP (not recommended)\n" /*  */
-    );
-}                                  /* static void usage(void) */
+	puts("\nUsage: nfq6 [-a <alt q #>] "    /*  */
+	     "[-t <test #>],... queue_number\n" /*  */
+	     "       nfq6 -h\n"                 /*  */
+	     "  -a <n>: Alternate queue for test 4\n" /*  */
+	     "  -h: give this Help and exit\n"        /*  */
+	     "  -t <n>: do Test <n>. Tests are:\n"    /*  */
+	     "    0: If packet mark is zero, set it to 0xbeef and give verdict "
+	     "NF_REPEAT\n"       /*  */
+	     "    1: If packet mark is not 0xfaceb00c, set it to that and give "
+	     "verdict NF_REPEAT\n" /*  */
+	     "       If packet mark *is* 0xfaceb00c, accept the packet\n"
+	     "    2: Allow ENOBUFS to happen; treat as harmless when it does\n"
+	     "    3: Configure NFQA_CFG_F_FAIL_OPEN\n"     /*  */
+	     "    4: Send packets to alternate -a queue\n" /*  */
+	     "    5: Force on test 4 and specify BYPASS\n" /*  */
+	     "    6: Exit nfq6 if incoming packet starts \"q[:space:]\""
+	     " (e.g. q\\n)\n"    /*  */
+	     "    7: Use pktb_setup_raw\n"   /*  */
+	     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
+	     "    9: Replace 1st ASD by F\n" /*  */
+	     "   10: Replace 1st QWE by RTYUIOP (UDP packets only)\n"
+	     "   11: Replace 2nd ASD by G\n" /*  */
+	     "   12: Replace 2nd QWE by MNBVCXZ (UDP packets only)\n"
+	     "   13: Set 16MB kernel socket buffer\n" /*  */
+	     "   14: Report EINTR if we get it\n"     /*  */
+	     "   15: Log netlink packets with no checksum\n"
+	     "   16: Log all netlink packets\n"       /*  */
+	     "   17: Replace 1st ZXC by VBN\n"        /*  */
+	     "   18: Replace 2nd ZXC by VBN\n"        /*  */
+	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
+	    );
+}                                /* static void usage(void) */
 
 /* ****************************** ip6_get_proto ***************************** */
 
-static uint8_t
-ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
+static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 {
 /* This code is a copy of nfq_ip6_set_transport_header(), modified to return the
  * upper-layer protocol instead. */
 
-  uint8_t nexthdr = ip6h->ip6_nxt;
-  uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
-  const uint8_t *pkt_tail = (const uint8_t *)nlh + nlh->nlmsg_len;
+	uint8_t nexthdr = ip6h->ip6_nxt;
+	uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
+	const uint8_t *pkt_tail = (const uint8_t *)nlh + nlh->nlmsg_len;
 
 /* Speedup: save 4 compares in the usual case (no extension headers) */
-  if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
-    return nexthdr;          /* Don't like this, but it saves an indent level */
+	if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
+		return nexthdr;        /* Ugly but it saves an indent level */
 
-  while (nexthdr == IPPROTO_HOPOPTS ||
-    nexthdr == IPPROTO_ROUTING ||
-    nexthdr == IPPROTO_FRAGMENT ||
-    nexthdr == IPPROTO_AH ||
-    nexthdr == IPPROTO_NONE || nexthdr == IPPROTO_DSTOPTS)
-  {
-    struct ip6_ext *ip6_ext;
-    uint32_t hdrlen;
+	while (nexthdr == IPPROTO_HOPOPTS ||
+	       nexthdr == IPPROTO_ROUTING ||
+	       nexthdr == IPPROTO_FRAGMENT ||
+	       nexthdr == IPPROTO_AH ||
+	       nexthdr == IPPROTO_NONE ||
+	       nexthdr == IPPROTO_DSTOPTS) {
+		struct ip6_ext *ip6_ext;
+		uint32_t hdrlen;
 
 /* No more extensions, we're done. */
-    if (nexthdr == IPPROTO_NONE)
-      break;
+		if (nexthdr == IPPROTO_NONE)
+			break;
 /* No room for extension, bad packet. */
-    if (pkt_tail - cur < sizeof(struct ip6_ext))
-    {
-      nexthdr = IPPROTO_NONE;
-      break;
-    }
-    ip6_ext = (struct ip6_ext *)cur;
+		if (pkt_tail - cur < sizeof(struct ip6_ext)) {
+			nexthdr = IPPROTO_NONE;
+			break;
+		}
+		ip6_ext = (struct ip6_ext *)cur;
 
-    if (nexthdr == IPPROTO_FRAGMENT)
-    {
+		if (nexthdr == IPPROTO_FRAGMENT) {
 
 /* No room for full fragment header, bad packet. */
-      if (pkt_tail - cur < sizeof(struct ip6_frag))
-      {
-        nexthdr = IPPROTO_NONE;
-        break;
-      }
+			if (pkt_tail - cur < sizeof(struct ip6_frag)) {
+				nexthdr = IPPROTO_NONE;
+				break;
+			}
 
 /* Fragment offset is only 13 bits long. */
-      if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) & ~0x7)
-      {
-/* Not the first fragment, it does not contain
- * any headers.
- */
-        nexthdr = IPPROTO_NONE;
-        break;
-      }
-      hdrlen = sizeof(struct ip6_frag);
-    }
-    else if (nexthdr == IPPROTO_AH)
-      hdrlen = (ip6_ext->ip6e_len + 2) << 2;
-    else
-      hdrlen = (ip6_ext->ip6e_len + 1) << 3;
+			if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) &
+			    ~0x7) {
 
-    nexthdr = ip6_ext->ip6e_nxt;
-    cur += hdrlen;
-  }
-  return nexthdr;
-}                                  /* ip6_get_proto() */
+/* Not the first fragment, it does not contain any headers. */
+				nexthdr = IPPROTO_NONE;
+				break;
+			}
+			hdrlen = sizeof(struct ip6_frag);
+		} else if (nexthdr == IPPROTO_AH)
+			hdrlen = (ip6_ext->ip6e_len + 2) << 2;
+		else
+			hdrlen = (ip6_ext->ip6e_len + 1) << 3;
+
+		nexthdr = ip6_ext->ip6e_nxt;
+		cur += hdrlen;
+	}
+	return nexthdr;
+}                                /* ip6_get_proto() */
