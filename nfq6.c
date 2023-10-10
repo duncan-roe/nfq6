@@ -485,8 +485,8 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 
 	if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
 	    isspace(xxp_payload[1])) {
-		accept = false;        /* Drop this packet */
-		quit = true;        /* Exit after giving verdict */
+		accept = false;  /* Drop this packet */
+		quit = true;     /* Exit after giving verdict */
 	}
 
 	if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
@@ -543,7 +543,7 @@ static void usage(void)
 	     "  -h: give this Help and exit\n"        /*  */
 	     "  -t <n>: do Test <n>. Tests are:\n"    /*  */
 	     "    0: If packet mark is zero, set it to 0xbeef and give verdict "
-	     "NF_REPEAT\n"       /*  */
+	     "NF_REPEAT\n"         /*  */
 	     "    1: If packet mark is not 0xfaceb00c, set it to that and give "
 	     "verdict NF_REPEAT\n" /*  */
 	     "       If packet mark *is* 0xfaceb00c, accept the packet\n"
@@ -552,7 +552,7 @@ static void usage(void)
 	     "    4: Send packets to alternate -a queue\n" /*  */
 	     "    5: Force on test 4 and specify BYPASS\n" /*  */
 	     "    6: Exit nfq6 if incoming packet starts \"q[:space:]\""
-	     " (e.g. q\\n)\n"    /*  */
+	     " (e.g. q\\n)\n"                /*  */
 	     "    7: Use pktb_setup_raw\n"   /*  */
 	     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
 	     "    9: Replace 1st ASD by F\n" /*  */
@@ -582,7 +582,7 @@ static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 
 /* Speedup: save 4 compares in the usual case (no extension headers) */
 	if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
-		return nexthdr;        /* Ugly but it saves an indent level */
+		return nexthdr;  /* Ugly but it saves an indent level */
 
 	while (nexthdr == IPPROTO_HOPOPTS ||
 	       nexthdr == IPPROTO_ROUTING ||
