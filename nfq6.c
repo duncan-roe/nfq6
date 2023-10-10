@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
 					"range\n",
 					alternate_queue);
 				exit(EXIT_FAILURE);
-			}        /* if (alternate_queue <= 0 || ... )*/
+			}
 			break;
 
 		case 'h':
@@ -113,14 +113,14 @@ int main(int argc, char *argv[])
 				fprintf(stderr, "Test %d is out of range\n",
 					ret);
 				exit(EXIT_FAILURE);
-			}        /* if (ret < 0 || ret > NUM_TESTS) */
+			}
 			tests[ret] = true;
 			break;
 
 		case '?':
 			exit(EXIT_FAILURE);
-		}                /* switch (i) */
-	}                        /* while () */
+		}
+	}
 
 	if (argc == optind) {
 		fputs("Missing queue number\n", stderr);
@@ -134,7 +134,7 @@ int main(int argc, char *argv[])
 	if (tests[4] && !alternate_queue) {
 		fputs("Missing alternate queue number for test 4\n", stderr);
 		exit(EXIT_FAILURE);
-	}                        /* if (tests[4] && !alternate_queue) */
+	}
 
 	setlinebuf(stdout);
 
@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
 		     &buffersize, sizeof(socklen_t)) == -1)
 			fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
 				strerror(errno), buffersize);
-	}                        /* if (tests[13]) */
+	}
 	getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
 		   &socklen);
 	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
@@ -229,13 +229,13 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 	if (!accept) {
 		nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
 		goto send_verdict;
-	}                        /* if (!accept) */
+	}
 
 	if (tests[0] && !packet_mark) {
 		nfq_nlmsg_verdict_put_mark(nlh, 0xbeef);
 		nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
 		done = true;
-	}                        /* if (tests[0] */
+	}
 
 	if (tests[1] && !done) {
 		if (packet_mark == 0xfaceb00c) {
@@ -243,9 +243,9 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 		} else {
 			nfq_nlmsg_verdict_put_mark(nlh, 0xfaceb00c);
 			nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
-		}                /* if (packet_mark == 0xfaceb00c) else */
+		}
 		done = true;
-	}                        /* if (tests[1] && !done) */
+	}
 
 	if (tests[4] && !done) {
 		nfq_nlmsg_verdict_put(nlh, id,
@@ -253,7 +253,7 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 				      (tests[5] ? NF_VERDICT_FLAG_QUEUE_BYPASS
 						: 0));
 		done = true;
-	}                        /* if (tests[4] && !done) */
+	}
 
 	if (!done)
 		nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
@@ -270,7 +270,7 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 			.msg_control = NULL,
 			.msg_controllen = 0,
 			.msg_flags = 0,
-		};                /* const struct msghdr msg = */
+		};
 
 		attrib->nla_type = NFQA_PAYLOAD;
 		attrib->nla_len = sizeof(struct nlattr) + len;
@@ -283,8 +283,8 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 		if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) {
 			perror("sendmsg");
 			exit(EXIT_FAILURE);
-		}         /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
-	}                        /* if (pktb_mangled(pktb) && tests[8]) */
+		}
+	}
 	else {
 		if (pktb_mangled(pktb))
 			nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb),
@@ -293,8 +293,8 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 			perror("mnl_socket_sendto");
 			exit(EXIT_FAILURE);
-		}      /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
-	}                        /* if (pktb_mangled(pktb) && tests[8] else */
+		}
+	}
 	if (quit)
 		exit(0);
 }
@@ -372,14 +372,14 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			nc += snprintf(record_buf, sizeof record_buf, "%s",
 				       "truncated ");
 			normal = false;
-		}                /* if (orig_len != plen) */
-	}                        /* if (attr[NFQA_CAP_LEN]) */
+		}
+	}
 
 	if (skbinfo & NFQA_SKB_GSO) {
 		nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s",
 			       "GSO ");
 		normal = false;
-	}                        /* if (skbinfo & NFQA_SKB_GSO) */
+	}
 
 	id = ntohl(ph->packet_id);
 	nc += snprintf(record_buf + nc, sizeof record_buf - nc,
@@ -392,7 +392,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
 		iphp = (void **)&ip4h;
 		myPROTO = ((struct iphdr *)payload)->protocol;
-	}                        /* if (is_IPv4) */
+	}
 	else {
 		if (nbo_proto != ETH_P_IPV6)
 			GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n",
@@ -400,7 +400,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		my_ipy_get_hdr = (void *)nfq_ip6_get_hdr;
 		iphp = (void **)&ip6h;
 		myPROTO = ip6_get_proto(nlh, (struct ip6_hdr *)payload);
-	}                        /* if (is_IPv4) else */
+	}
 
 /* Speedup: skip setting pointers if L3 & L4 protos same as last time */
 /* (usual case) */
@@ -419,7 +419,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			my_xxp_get_payload_len =
 			    (unsigned int (*)(void *, struct pkt_buff *))
 			    nfq_tcp_get_payload_len;
-		}                /* if (myPROTO == IPPROTO_TCP) */
+		}
 		else if (myPROTO == IPPROTO_UDP) {
 			xxph = (void **)&udph;
 			mangler =
@@ -432,10 +432,10 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			my_xxp_get_payload_len =
 			    (unsigned int (*)(void *, struct pkt_buff *))
 			    nfq_udp_get_payload_len;
-		}                /* else if (myPROTO == IPPROTO_UDP) */
+		}
 		else
 			GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
-	}                        /* if (!(is_IPv4 == was_IPv4 && ... */
+	}
 
 /* ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
  * The application should behave as if the checksums are correct.
@@ -446,11 +446,11 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			       ", checksum not ready");
 		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
 			normal = false;
-	}                        /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
+	}
 	if (!normal) {
 		snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
 		printf("%s", record_buf);
-	}                        /* if (!normal) */
+	}
 
 /* Copy data to a packet buffer. Allow 255 bytes extra room */
 /* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
@@ -459,16 +459,16 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		pktb = pktb_setup_raw(pb, AF_INET6, payload, plen,
 				      *(size_t *)data);
 		errfunc = "pktb_setup_raw";
-	}                        /* if (tests[7]) */
+	}
 	else {
 		pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
 		errfunc = "pktb_alloc";
-	}                        /* if (!tests[7] else */
+	}
 	if (!pktb) {
 		snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno),
 			 errfunc);
 		GIVE_UP(erbuf);
-	}                        /* if (!pktb) */
+	}
 
 	if (!(*iphp = my_ipy_get_hdr(pktb)))
 		GIVE_UP2("Malformed IPv%c\n", is_IPv4 ? '4' : '6');
@@ -476,11 +476,11 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	if (is_IPv4) {
 		if (nfq_ip_set_transport_header(pktb, *iphp))
 			GIVE_UP("No payload found\n");
-	}                        /* if (is_IPv4) */
+	}
 	else {
 		if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
 			GIVE_UP2("No %s payload found\n", myP);
-	}                        /* if (is_IPv4) else */
+	}
 	if (!(*xxph = my_xxp_get_hdr(pktb)))
 		GIVE_UP2("Packet too short to get %s header\n", myP);
 	if (!(xxp_payload = my_xxp_get_payload(*xxph, pktb)))
@@ -491,12 +491,12 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	    isspace(xxp_payload[1])) {
 		accept = false;        /* Drop this packet */
 		quit = true;        /* Exit after giving verdict */
-	}                        /* if (tests[6] && strchr(xxp_payload, 'q')) */
+	}
 
 	if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
 		mangler(pktb, p - xxp_payload, 3, "F", 1);
 		xxp_payload_len -= 2;
-	}                        /* tests[9] */
+	}
 
 	if (tests[10] && (myPROTO == IPPROTO_UDP || tests[19]) &&
 	    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3))) {
@@ -504,12 +504,12 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			xxp_payload_len += 4;
 		else
 			fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
-	}                        /* tests[10] */
+	}
 
 	if (tests[11] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
 		mangler(pktb, p - xxp_payload, 3, "G", 1);
 		xxp_payload_len -= 2;
-	}                        /* tests[11] */
+	}
 
 
 	if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
@@ -518,7 +518,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			xxp_payload_len += 4;
 		else
 			fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
-	}               /* if (tests[12] && (p = strstr(xxp_payload, "QWE"))) */
+	}
 
 	if (tests[17] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
 		mangler(pktb, p - xxp_payload, 3, "VBN", 3);
@@ -571,7 +571,7 @@ static void usage(void)
 	     "   18: Replace 2nd ZXC by VBN\n"        /*  */
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
 	    );
-}                                /* static void usage(void) */
+}
 
 /* ****************************** ip6_get_proto ***************************** */
 
@@ -633,4 +633,4 @@ static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 		cur += hdrlen;
 	}
 	return nexthdr;
-}                                /* ip6_get_proto() */
+}
