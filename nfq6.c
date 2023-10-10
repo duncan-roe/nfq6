@@ -284,8 +284,7 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 			perror("sendmsg");
 			exit(EXIT_FAILURE);
 		}
-	}
-	else {
+	} else {
 		if (pktb_mangled(pktb))
 			nfq_nlmsg_verdict_put_pkt(nlh, pktb_data(pktb),
 						  pktb_len(pktb));
@@ -392,8 +391,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
 		iphp = (void **)&ip4h;
 		myPROTO = ((struct iphdr *)payload)->protocol;
-	}
-	else {
+	} else {
 		if (nbo_proto != ETH_P_IPV6)
 			GIVE_UP2("Unrecognised L3 protocol: 0x%04hx\n",
 				 nbo_proto);
@@ -459,8 +457,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		pktb = pktb_setup_raw(pb, AF_INET6, payload, plen,
 				      *(size_t *)data);
 		errfunc = "pktb_setup_raw";
-	}
-	else {
+	} else {
 		pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
 		errfunc = "pktb_alloc";
 	}
@@ -476,8 +473,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	if (is_IPv4) {
 		if (nfq_ip_set_transport_header(pktb, *iphp))
 			GIVE_UP("No payload found\n");
-	}
-	else {
+	} else {
 		if (!nfq_ip6_set_transport_header(pktb, *iphp, myPROTO))
 			GIVE_UP2("No %s payload found\n", myP);
 	}
