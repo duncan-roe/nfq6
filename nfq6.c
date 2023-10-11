@@ -400,8 +400,9 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		myPROTO = ip6_get_proto(nlh, (struct ip6_hdr *)payload);
 	}
 
-/* Speedup: skip setting pointers if L3 & L4 protos same as last time */
-/* (usual case) */
+	/* Speedup: skip setting pointers if L3 & L4 protos same as last time
+	 * (usual case)
+	 */
 	if (!(is_IPv4 == was_IPv4 && myPROTO == myPreviousPROTO)) {
 		was_IPv4 = is_IPv4;
 		myPreviousPROTO = myPROTO;
@@ -435,10 +436,15 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
 	}
 
-/* ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
- * The application should behave as if the checksums are correct.
- * If these packets are later forwarded/sent out, the checksums will
- * be corrected by kernel/hardware. */
+	/*
+	 * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
+	 * The application should behave as if the checksums are correct.
+	 *
+	 * If these packets are later forwarded/sent out, the checksums will
+	 * be corrected by kernel/hardware.
+	 * If we mangle the packet, the called functions will update the
+	 * checksums.
+	 */
 	if (skbinfo & NFQA_SKB_CSUMNOTREADY) {
 		nc += snprintf(record_buf + nc, sizeof record_buf - nc,
 			       ", checksum not ready");
@@ -450,8 +456,10 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		printf("%s", record_buf);
 	}
 
-/* Copy data to a packet buffer. Allow 255 bytes extra room */
-/* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
+	/* Set up a packet buffer. If copying data allow 255 bytes extra room,
+	 * otherwise use extra room in the receive buffer.
+	 * AF_INET6 and AF_INET work the same, no need to look at is_IPv4.
+	 */
 #define EXTRA 255
 	if (tests[7]) {
 		pktb = pktb_setup_raw(pb, AF_INET6, payload, plen,
@@ -573,14 +581,16 @@ static void usage(void)
 
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 {
-/* This code is a copy of nfq_ip6_set_transport_header(), modified to return the
- * upper-layer protocol instead. */
+	/* This code is a copy of nfq_ip6_set_transport_header(),
+	 * modified to return the upper-layer protocol instead.
+	 */
 
 	uint8_t nexthdr = ip6h->ip6_nxt;
 	uint8_t *cur = (uint8_t *)ip6h + sizeof(struct ip6_hdr);
 	const uint8_t *pkt_tail = (const uint8_t *)nlh + nlh->nlmsg_len;
 
-/* Speedup: save 4 compares in the usual case (no extension headers) */
+	/* Speedup: save 4 compares in the usual case (no extension headers)
+	 */
 	if (nexthdr == IPPROTO_TCP || nexthdr == IPPROTO_UDP)
 		return nexthdr;  /* Ugly but it saves an indent level */
 
@@ -593,10 +603,10 @@ static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 		struct ip6_ext *ip6_ext;
 		uint32_t hdrlen;
 
-/* No more extensions, we're done. */
+		/* No more extensions, we're done. */
 		if (nexthdr == IPPROTO_NONE)
 			break;
-/* No room for extension, bad packet. */
+		/* No room for extension, bad packet. */
 		if (pkt_tail - cur < sizeof(struct ip6_ext)) {
 			nexthdr = IPPROTO_NONE;
 			break;
@@ -605,17 +615,19 @@ static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 
 		if (nexthdr == IPPROTO_FRAGMENT) {
 
-/* No room for full fragment header, bad packet. */
+			/* No room for full fragment header, bad packet. */
 			if (pkt_tail - cur < sizeof(struct ip6_frag)) {
 				nexthdr = IPPROTO_NONE;
 				break;
 			}
 
-/* Fragment offset is only 13 bits long. */
+			/* Fragment offset is only 13 bits long. */
 			if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) &
 			    ~0x7) {
 
-/* Not the first fragment, it does not contain any headers. */
+			/* Not the first fragment,
+			 * it does not contain any headers.
+			 */
 				nexthdr = IPPROTO_NONE;
 				break;
 			}
