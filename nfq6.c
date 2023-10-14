@@ -437,13 +437,13 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	}
 
 	/*
-	 * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
-	 * The application should behave as if the checksums are correct.
+	 * ip/tcp checksum is not yet valid, e.g. due to GRO/GSO or IPv6.
+	 * The application should behave as if the checksum is correct.
 	 *
-	 * If these packets are later forwarded/sent out, the checksums will
+	 * If this packet is later forwarded/sent out, the checksum will
 	 * be corrected by kernel/hardware.
-	 * If we mangle the packet, the called functions will update the
-	 * checksums.
+	 * If we mangle this packet,
+	 * the called function will update the checksum.
 	 */
 	if (skbinfo & NFQA_SKB_CSUMNOTREADY) {
 		nc += snprintf(record_buf + nc, sizeof record_buf - nc,
@@ -451,10 +451,8 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
 			normal = false;
 	}
-	if (!normal) {
-		snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
-		printf("%s", record_buf);
-	}
+	if (!normal)
+		puts(record_buf);
 
 	/* Set up a packet buffer. If copying data allow 255 bytes extra room,
 	 * otherwise use extra room in the receive buffer.
