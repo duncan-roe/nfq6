@@ -9,19 +9,22 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
+#include <string.h>
 #include <linux/ip.h>
 #include <arpa/inet.h>
-#include <linux/types.h>
+
 #include <netinet/ip6.h>
 #include <sys/resource.h>
 #include <libmnl/libmnl.h>
 #include <linux/if_ether.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
+
 #include <libnetfilter_queue/pktbuff.h>
+#include <linux/types.h>
 #include <linux/netfilter/nfnetlink_queue.h>
+
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <libnetfilter_queue/libnetfilter_queue_tcp.h>
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
@@ -51,7 +54,7 @@ typedef enum bool {
 static struct mnl_socket *nl;
 /* Largest possible packet payload, plus netlink data overhead: */
 static char nlrxbuf[0xffff + 4096];
-static char nltxbuf[sizeof nlrxbuf];
+static char buf[sizeof nlrxbuf];
 static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
 
@@ -80,12 +83,13 @@ static void *(*my_ipy_get_hdr)(struct pkt_buff *);
 
 /* **************************** nfq_send_verdict **************************** */
 
-static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
+static void
+nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
 	struct nlmsghdr *nlh;
 	bool done = false;
 
-	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
+	nlh = nfq_nlmsg_put(buf, NFQNL_MSG_VERDICT, queue_num);
 
 	if (!accept) {
 		nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
@@ -201,6 +205,9 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	bool is_IPv4;
 	static bool was_IPv4;
 
+	/* Parse netlink message received from the kernel, the array of
+	 * attributes is set up to store metadata and the actual packet.
+	 */
 	if (nfq_nlmsg_parse(nlh, attr) < 0) {
 		perror("problems parsing");
 		return MNL_CB_ERROR;
@@ -213,38 +220,48 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		return MNL_CB_ERROR;
 	}
 
+	/* Access packet metadata, which provides unique packet ID, hook number
+	 * and ethertype. See struct nfqnl_msg_packet_hdr for details.
+	 */
 	ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
 
+	/* Access actual packet data length. */
 	plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
 
+	/* Access actual packet data */
 	payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
 
 	packet_mark =
 	    attr[NFQA_MARK] ? ntohl(mnl_attr_get_u32(attr[NFQA_MARK])) : 0;
 
-	skbinfo =
-	    attr[NFQA_SKB_INFO] ? ntohl(mnl_attr_get_u32(attr[NFQA_SKB_INFO])) :
-	    0;
+	/* Fetch metadata flags, possible flags values are:
+	 *
+	 * - NFQA_SKB_CSUMNOTREADY:
+	 *	Kernel performed partial checksum validation, see CHECKSUM_PARTIAL.
+	 * - NFQA_SKB_CSUM_NOTVERIFIED:
+	 *	Kernel already verified checksum.
+	 * - NFQA_SKB_GSO:
+	 *	Not the original packet received from the wire. Kernel has
+	 *	aggregated several packets into one single packet via GSO.
+	 */
+	skbinfo = attr[NFQA_SKB_INFO] ? ntohl(mnl_attr_get_u32(attr[NFQA_SKB_INFO])) : 0;
 
+	/* Kernel has truncated the packet, fetch original packet length. */
 	if (attr[NFQA_CAP_LEN]) {
 		uint32_t orig_len = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
 		if (orig_len != plen) {
-			nc += snprintf(record_buf, sizeof record_buf, "%s",
-				       "truncated ");
+			nc += snprintf(record_buf, sizeof record_buf, "%s", "truncated ");
 			normal = false;
 		}
 	}
 
 	if (skbinfo & NFQA_SKB_GSO) {
-		nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s",
-			       "GSO ");
+		nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s", "GSO ");
 		normal = false;
 	}
 
 	id = ntohl(ph->packet_id);
-	nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-		       "packet received "
-		       "(id=%u hw=0x%04x hook=%u, payload len %u",
+	nc += snprintf(record_buf + nc, sizeof record_buf - nc, "packet received (id=%u hw=0x%04x hook=%u, payload len %u",
 		       id, nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
 
 	is_IPv4 = nbo_proto == ETH_P_IP;
@@ -298,22 +315,20 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	}
 
 	/*
-	 * ip/tcp checksum is not yet valid, e.g. due to GRO/GSO or IPv6.
-	 * The application should behave as if the checksum is correct.
+	 * ip/tcp checksums are not yet valid, e.g. due to GRO/GSO or IPv6.
+	 * The application should behave as if the checksums are correct.
 	 *
-	 * If this packet is later forwarded/sent out, the checksum will
+	 * If these packets are later forwarded/sent out, the checksums will
 	 * be corrected by kernel/hardware.
-	 * If we mangle this packet,
-	 * the called function will update the checksum.
 	 */
 	if (skbinfo & NFQA_SKB_CSUMNOTREADY) {
-		nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-			       ", checksum not ready");
+		nc += snprintf(record_buf + nc, sizeof record_buf - nc, ", checksum not ready");
 		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
 			normal = false;
 	}
 	if (!normal) {
-		printf("%s)\n", record_buf);
+		fputs(record_buf, stderr);
+		puts(")");
 	}
 
 	/* Set up a packet buffer. If copying data, allow 255 bytes extra room;
@@ -399,8 +414,6 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	return MNL_CB_OK;
 }
 
-/* ********************************** main ********************************** */
-
 int main(int argc, char *argv[])
 {
 	struct nlmsghdr *nlh;
@@ -457,6 +470,9 @@ int main(int argc, char *argv[])
 
 	setlinebuf(stdout);
 
+	/*
+	 * Set up netlink socket to communicate with the netfilter subsystem.
+	 */
 	nl = mnl_socket_open(NETLINK_NETFILTER);
 	if (nl == NULL) {
 		perror("mnl_socket_open");
@@ -481,23 +497,26 @@ int main(int argc, char *argv[])
 	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
 	       read_size / (1024 * 1024));
 
-	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-	nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
+       /* Configure the pipeline between kernel and userspace, build and send
+	* a netlink message to specify queue number to bind to. Your ruleset
+	* has to use this queue number to deliver packets to userspace.
+	*/
+	nlh = nfq_nlmsg_put(buf, NFQNL_MSG_CONFIG, queue_num);
+	nfq_nlmsg_cfg_put_cmd(nlh, AF_INET, NFQNL_CFG_CMD_BIND);
 
 	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 		perror("mnl_socket_send");
 		exit(EXIT_FAILURE);
 	}
 
-	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+	/* Build and send a netlink message to specify how many bytes are
+	 * copied from kernel to userspace for this queue.
+	 */
+	nlh = nfq_nlmsg_put(buf, NFQNL_MSG_CONFIG, queue_num);
 	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
-	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_GSO | (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_GSO | (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 
 	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 		perror("mnl_socket_send");
@@ -508,12 +527,13 @@ int main(int argc, char *argv[])
 	 * on kernel side.  In most cases, userspace isn't interested
 	 * in this information, so turn it off.
 	 */
-	if (!tests[2]) {
-		ret = 1;
-		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret,
-				      sizeof(int));
+	if (!tests[2]) { ret = 1;
+		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
 	}
 
+	/* Loop forever on packets received from the kernel and run the
+	 * callback handler.
+	 */
 	for (;;) {
 		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
 		if (ret == -1) {
