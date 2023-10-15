@@ -2,8 +2,7 @@
 
 /* System headers */
 
-#define _GNU_SOURCE
-#include <time.h>
+#define _GNU_SOURCE              /* To get memmem */
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -13,7 +12,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/ip.h>
-#include <sys/time.h>
 #include <arpa/inet.h>
 #include <linux/types.h>
 #include <netinet/ip6.h>
@@ -314,10 +312,11 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
 			normal = false;
 	}
-	if (!normal)
-		puts(record_buf);
+	if (!normal) {
+		printf("%s)\n", record_buf);
+	}
 
-	/* Set up a packet buffer. If copying data allow 255 bytes extra room,
+	/* Set up a packet buffer. If copying data, allow 255 bytes extra room;
 	 * otherwise use extra room in the receive buffer.
 	 * AF_INET6 and AF_INET work the same, no need to look at is_IPv4.
 	 */
@@ -408,7 +407,7 @@ int main(int argc, char *argv[])
 	int ret;
 	unsigned int portid, queue_num;
 	int i;
-	size_t sperrume;         /* Spare room (strine) */
+	size_t sperrume;         /* Spare room */
 
 	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
 		switch (i) {
@@ -509,9 +508,11 @@ int main(int argc, char *argv[])
 	 * on kernel side.  In most cases, userspace isn't interested
 	 * in this information, so turn it off.
 	 */
-	if (!tests[2])
+	if (!tests[2]) {
+		ret = 1;
 		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret,
 				      sizeof(int));
+	}
 
 	for (;;) {
 		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
@@ -525,7 +526,7 @@ int main(int argc, char *argv[])
 		sperrume = sizeof nlrxbuf - ret;
 
 		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
-		if (ret < 0 && !(errno == EINTR || tests[14])) {
+		if (ret < 0 && (errno != EINTR || tests[14])) {
 			perror("mnl_cb_run");
 			if (errno != EINTR)
 				exit(EXIT_FAILURE);
