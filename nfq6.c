@@ -80,143 +80,6 @@ static void *(*my_xxp_get_payload)(void *, struct pkt_buff *);
 static unsigned int (*my_xxp_get_payload_len)(void *, struct pkt_buff *);
 static void *(*my_ipy_get_hdr)(struct pkt_buff *);
 
-/* ********************************** main ********************************** */
-
-int main(int argc, char *argv[])
-{
-	struct nlmsghdr *nlh;
-	int ret;
-	unsigned int portid, queue_num;
-	int i;
-	size_t sperrume;         /* Spare room (strine) */
-
-	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
-		switch (i) {
-		case 'a':
-			alternate_queue = atoi(optarg);
-			if (alternate_queue <= 0 || alternate_queue > 0xffff) {
-				fprintf(stderr,
-					"Alternate queue number %d is out of "
-					"range\n",
-					alternate_queue);
-				exit(EXIT_FAILURE);
-			}
-			break;
-
-		case 'h':
-			usage();
-			return 0;
-
-		case 't':
-			ret = atoi(optarg);
-			if (ret < 0 || ret >= NUM_TESTS) {
-				fprintf(stderr, "Test %d is out of range\n",
-					ret);
-				exit(EXIT_FAILURE);
-			}
-			tests[ret] = true;
-			break;
-
-		case '?':
-			exit(EXIT_FAILURE);
-		}
-	}
-
-	if (argc == optind) {
-		fputs("Missing queue number\n", stderr);
-		exit(EXIT_FAILURE);
-	}
-	queue_num = atoi(argv[optind]);
-
-	if (tests[5])
-		tests[4] = true;
-
-	if (tests[4] && !alternate_queue) {
-		fputs("Missing alternate queue number for test 4\n", stderr);
-		exit(EXIT_FAILURE);
-	}
-
-	setlinebuf(stdout);
-
-	nl = mnl_socket_open(NETLINK_NETFILTER);
-	if (nl == NULL) {
-		perror("mnl_socket_open");
-		exit(EXIT_FAILURE);
-	}
-
-	if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) {
-		perror("mnl_socket_bind");
-		exit(EXIT_FAILURE);
-	}
-	portid = mnl_socket_get_portid(nl);
-
-	if (tests[13]) {
-		if (setsockopt
-		    (mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
-		     &buffersize, sizeof(socklen_t)) == -1)
-			fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
-				strerror(errno), buffersize);
-	}
-	getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
-		   &socklen);
-	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
-	       read_size / (1024 * 1024));
-
-	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-	nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
-
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
-		perror("mnl_socket_send");
-		exit(EXIT_FAILURE);
-	}
-
-	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
-	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
-
-	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
-		perror("mnl_socket_send");
-		exit(EXIT_FAILURE);
-	}
-
-	/* ENOBUFS is signalled to userspace when packets were lost
-	 * on kernel side.  In most cases, userspace isn't interested
-	 * in this information, so turn it off.
-	 */
-	if (!tests[2])
-		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret,
-				      sizeof(int));
-
-	for (;;) {
-		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
-		if (ret == -1) {
-			perror("mnl_socket_recvfrom");
-			if (errno == ENOBUFS)
-				continue;
-			exit(EXIT_FAILURE);
-		}
-		assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
-		sperrume = sizeof nlrxbuf - ret;
-
-		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
-		if (ret < 0 && !(errno == EINTR || tests[14])) {
-			perror("mnl_cb_run");
-			if (errno != EINTR)
-				exit(EXIT_FAILURE);
-		}
-	}
-
-	mnl_socket_close(nl);
-
-	return 0;
-}
-
 /* **************************** nfq_send_verdict **************************** */
 
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
@@ -535,6 +398,143 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		pktb_free(pktb);
 
 	return MNL_CB_OK;
+}
+
+/* ********************************** main ********************************** */
+
+int main(int argc, char *argv[])
+{
+	struct nlmsghdr *nlh;
+	int ret;
+	unsigned int portid, queue_num;
+	int i;
+	size_t sperrume;         /* Spare room (strine) */
+
+	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
+		switch (i) {
+		case 'a':
+			alternate_queue = atoi(optarg);
+			if (alternate_queue <= 0 || alternate_queue > 0xffff) {
+				fprintf(stderr,
+					"Alternate queue number %d is out of "
+					"range\n",
+					alternate_queue);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 'h':
+			usage();
+			return 0;
+
+		case 't':
+			ret = atoi(optarg);
+			if (ret < 0 || ret >= NUM_TESTS) {
+				fprintf(stderr, "Test %d is out of range\n",
+					ret);
+				exit(EXIT_FAILURE);
+			}
+			tests[ret] = true;
+			break;
+
+		case '?':
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (argc == optind) {
+		fputs("Missing queue number\n", stderr);
+		exit(EXIT_FAILURE);
+	}
+	queue_num = atoi(argv[optind]);
+
+	if (tests[5])
+		tests[4] = true;
+
+	if (tests[4] && !alternate_queue) {
+		fputs("Missing alternate queue number for test 4\n", stderr);
+		exit(EXIT_FAILURE);
+	}
+
+	setlinebuf(stdout);
+
+	nl = mnl_socket_open(NETLINK_NETFILTER);
+	if (nl == NULL) {
+		perror("mnl_socket_open");
+		exit(EXIT_FAILURE);
+	}
+
+	if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) {
+		perror("mnl_socket_bind");
+		exit(EXIT_FAILURE);
+	}
+	portid = mnl_socket_get_portid(nl);
+
+	if (tests[13]) {
+		if (setsockopt
+		    (mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
+		     &buffersize, sizeof(socklen_t)) == -1)
+			fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
+				strerror(errno), buffersize);
+	}
+	getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
+		   &socklen);
+	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
+	       read_size / (1024 * 1024));
+
+	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+	nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
+
+	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+		perror("mnl_socket_send");
+		exit(EXIT_FAILURE);
+	}
+
+	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
+
+	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
+			 htonl(NFQA_CFG_F_GSO |
+			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
+			 htonl(NFQA_CFG_F_GSO |
+			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+
+	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+		perror("mnl_socket_send");
+		exit(EXIT_FAILURE);
+	}
+
+	/* ENOBUFS is signalled to userspace when packets were lost
+	 * on kernel side.  In most cases, userspace isn't interested
+	 * in this information, so turn it off.
+	 */
+	if (!tests[2])
+		mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret,
+				      sizeof(int));
+
+	for (;;) {
+		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+		if (ret == -1) {
+			perror("mnl_socket_recvfrom");
+			if (errno == ENOBUFS)
+				continue;
+			exit(EXIT_FAILURE);
+		}
+		assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
+		sperrume = sizeof nlrxbuf - ret;
+
+		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
+		if (ret < 0 && !(errno == EINTR || tests[14])) {
+			perror("mnl_cb_run");
+			if (errno != EINTR)
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	mnl_socket_close(nl);
+
+	return 0;
 }
 
 /* ********************************** usage ********************************* */
