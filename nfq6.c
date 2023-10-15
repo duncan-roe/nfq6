@@ -312,9 +312,8 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
 			normal = false;
 	}
-	if (!normal) {
+	if (!normal)
 		printf("%s)\n", record_buf);
-	}
 
 	/* Set up a packet buffer. If copying data, allow 255 bytes extra room;
 	 * otherwise use extra room in the receive buffer.
