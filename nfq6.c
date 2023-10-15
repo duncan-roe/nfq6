@@ -206,22 +206,19 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		return MNL_CB_ERROR;
 	}
 
+	/* Most of the lines in this next block are individually annotated in
+	 * nf-queue.c.
+	 */
 	nfg = mnl_nlmsg_get_payload(nlh);
-
 	if (attr[NFQA_PACKET_HDR] == NULL) {
 		fputs("metaheader not set\n", stderr);
 		return MNL_CB_ERROR;
 	}
-
 	ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
-
 	plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
-
 	payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
-
 	packet_mark =
 	    attr[NFQA_MARK] ? ntohl(mnl_attr_get_u32(attr[NFQA_MARK])) : 0;
-
 	skbinfo =
 	    attr[NFQA_SKB_INFO] ? ntohl(mnl_attr_get_u32(attr[NFQA_SKB_INFO])) :
 	    0;
@@ -242,11 +239,21 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	}
 
 	id = ntohl(ph->packet_id);
-	nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-		       "packet received "
-		       "(id=%u hw=0x%04x hook=%u, payload len %u",
+	nc += snprintf(record_buf + nc, sizeof record_buf - nc, "packet "
+		       "received (id=%u hw=0x%04x hook=%u, payload len %u",
 		       id, nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
 
+	/*
+	 * The code from here down to "ip/tcp checksum is not yet valid"
+	 * determines whether this packet is IP verion 4 or 6,
+	 * and within that whether TCP or UDP.
+	 * In order to avoid repeated tests on protocol and IP version,
+	 * the code sets up function and data pointers for generic use.
+	 * Most packet buffer functions have a similar enough signature between
+	 * protocols that they can be cast to a common prototype,
+	 * albeit at the cost of type checking since the common prototype
+	 * will contain or return void pointers.
+	 */
 	is_IPv4 = nbo_proto == ETH_P_IP;
 	if (is_IPv4) {
 		my_ipy_get_hdr = (void *)nfq_ip_get_hdr;
@@ -303,6 +310,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	 *
 	 * If this packet is later forwarded/sent out, the checksum will
 	 * be corrected by kernel/hardware.
+	 *
 	 * If we mangle this packet,
 	 * the called function will update the checksum.
 	 */
