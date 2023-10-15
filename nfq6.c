@@ -2,8 +2,7 @@
 
 /* System headers */
 
-#define _GNU_SOURCE
-#include <time.h>
+#define _GNU_SOURCE                /* To get memmem */
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -13,7 +12,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/ip.h>
-#include <sys/time.h>
 #include <arpa/inet.h>
 #include <linux/types.h>
 #include <netinet/ip6.h>
@@ -88,7 +86,7 @@ main(int argc, char *argv[])
   int ret;
   unsigned int portid, queue_num;
   int i;
-  size_t sperrume;                 /* Spare room (strine) */
+  size_t sperrume;                 /* Spare room */
 
   while ((i = getopt(argc, argv, "a:ht:")) != -1)
   {
@@ -195,7 +193,10 @@ main(int argc, char *argv[])
  * in this information, so turn it off.
  */
   if (!tests[2])
+  {
+    ret = 1;
     mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
+  }                                /* if (!tests[2]) */
 
   for (;;)
   {
@@ -211,7 +212,7 @@ main(int argc, char *argv[])
     sperrume = sizeof nlrxbuf - ret;
 
     ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
-    if (ret < 0 && !(errno == EINTR || tests[14]))
+    if (ret < 0 && (errno != EINTR || tests[14]))
     {
       perror("mnl_cb_run");
       if (errno != EINTR)
@@ -466,13 +467,12 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       normal = false;
   }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
   if (!normal)
-  {
-    snprintf(record_buf + nc, sizeof record_buf - nc, ")\n");
-    printf("%s", record_buf);
-  }                                /* if (!normal) */
+    printf("%s)\n", record_buf);
 
-/* Copy data to a packet buffer. Allow 255 bytes extra room */
-/* AF_INET6 and AF_INET work the same, no need to look at is_IPv4 */
+/* Set up a packet buffer. If copying data, allow 255 bytes extra room;
+ * otherwise use extra room in the receive buffer.
+ * AF_INET6 and AF_INET work the same, no need to look at is_IPv4
+ */
 #define EXTRA 255
   if (tests[7])
   {
