@@ -56,10 +56,10 @@ static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
 
 static uint32_t packet_mark;
-static int alternate_queue = 0;
-static bool quit = false;
+static int alternate_queue;
+static bool quit;
 static socklen_t buffersize = 1024 * 1024 * 8;
-static socklen_t socklen = sizeof buffersize, read_size = 0;
+static socklen_t socklen = sizeof buffersize, read_size;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 static char *myP;
@@ -165,13 +165,13 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 #undef GIVE_UP
 #endif
 #define GIVE_UP(x)\
-do {fputs(x, stderr); accept = false; goto send_verdict;} while (0)
+do {fputs(x, stderr); accept = false; goto send_verdict; } while (0)
 
 #ifdef GIVE_UP2
 #undef GIVE_UP2
 #endif
 #define GIVE_UP2(x, y)\
-do {fprintf(stderr, x, y); accept = false; goto send_verdict;} while (0)
+do {fprintf(stderr, x, y); accept = false; goto send_verdict; } while (0)
 
 static int queue_cb(const struct nlmsghdr *nlh, void *data)
 {
@@ -286,8 +286,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			my_xxp_get_payload_len =
 			    (unsigned int (*)(void *, struct pkt_buff *))
 			    nfq_tcp_get_payload_len;
-		}
-		else if (myPROTO == IPPROTO_UDP) {
+		} else if (myPROTO == IPPROTO_UDP) {
 			xxph = (void **)&udph;
 			mangler =
 			    is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
@@ -299,8 +298,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			my_xxp_get_payload_len =
 			    (unsigned int (*)(void *, struct pkt_buff *))
 			    nfq_udp_get_payload_len;
-		}
-		else
+		} else
 			GIVE_UP2("Unrecognised L4 protocol: %02hhu\n", myPROTO);
 	}
 
