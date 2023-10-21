@@ -30,7 +30,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 20
+#define NUM_TESTS 21
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -41,6 +41,7 @@
 
 /* Typedefs */
 
+/* Enable gdb to show Booleans as "true" or "false" */
 typedef enum bool {
 	false,
 	true
@@ -165,13 +166,13 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 #undef GIVE_UP
 #endif
 #define GIVE_UP(x)\
-do {fputs(x, stderr); accept = false; goto send_verdict; } while (0)
+do {fputs(x, stderr); goto send_verdict; } while (0)
 
 #ifdef GIVE_UP2
 #undef GIVE_UP2
 #endif
 #define GIVE_UP2(x, y)\
-do {fprintf(stderr, x, y); accept = false; goto send_verdict; } while (0)
+do {fprintf(stderr, x, y); goto send_verdict; } while (0)
 
 static int queue_cb(const struct nlmsghdr *nlh, void *data)
 {
@@ -497,9 +498,11 @@ int main(int argc, char *argv[])
 	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
 	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
-	mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	if (!tests[20] || tests[3]) {
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
+				 htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
+				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+	}
 	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
 			 htonl(NFQA_CFG_F_GSO |
 			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
@@ -578,6 +581,7 @@ static void usage(void)
 	     "   17: Replace 1st ZXC by VBN\n"        /*  */
 	     "   18: Replace 2nd ZXC by VBN\n"        /*  */
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
+	     "   20: Disable GSO\n"                   /*  */
 	    );
 }
 
