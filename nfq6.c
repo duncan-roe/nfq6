@@ -229,6 +229,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 
 	if (attr[NFQA_CAP_LEN]) {
 		uint32_t orig_len = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
+
 		if (orig_len != plen) {
 			nc += snprintf(record_buf, sizeof record_buf, "%s",
 				       "truncated ");
