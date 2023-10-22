@@ -72,7 +72,10 @@ static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
-static int (*mangler)(struct pkt_buff *, unsigned int, unsigned int,
+
+/* Generic function pointers */
+
+static int (*my_xxp_mangle_ipvy)(struct pkt_buff *, unsigned int, unsigned int,
 		      const char *, unsigned int);
 static void *(*my_xxp_get_hdr)(struct pkt_buff *);
 static void *(*my_xxp_get_payload)(void *, struct pkt_buff *);
@@ -248,12 +251,48 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	 * The code from here down to "ip/tcp checksum is not yet valid"
 	 * determines whether this packet is IP verion 4 or 6,
 	 * and within that whether TCP or UDP.
+	 *
 	 * In order to avoid repeated tests on protocol and IP version,
 	 * the code sets up function and data pointers for generic use.
 	 * Most packet buffer functions have a similar enough signature between
 	 * protocols that they can be cast to a common prototype,
 	 * albeit at the cost of type checking since the common prototype
 	 * will contain or return void pointers.
+	 *
+	 * If you are using this program as a template for a single-protocol
+	 * filter, you don't need this but you do need to do the following:
+	 * - (suggestion only) Keep a copy of this file
+	 * - Delete this code chunk, as above
+	 * - Delete function body and declaration of ip6_get_proto
+	 * - Delete declarations of myP, myPROTO, myPreviousPROTO, iphp, xxph,
+	 *                          nbo_proto, is_IPv4 & was_IPv4
+	 * - Delete declaration of either ip4h or ip6h, change "*iphp" to the
+	 *   one you kept e.g. s/\*iphp/ip4h/g
+	 * - Similarly, delete declaration of either tcph or udph, and change
+	 *   "*xxph" to the one you kept.
+	 * - Delete the generic function pointer declarations
+	 * - Edit generic function names (and other code) back to specifics:
+	 *   - "my_"  becomes "nfq_"
+	 *   - "xxp"  becomes "tcp"  or "udp"
+	 *   - "ipvy" becomes "ipv4" or "ipv6"
+	 *   - "ipy"  becomes "ip"   or "ip6" (1 occurrence)
+	 *   E.g. for udp4, my_xxp_mangle_ipvy becomes nfq_udp_mangle_ipv4.
+	 * - Replace myPROTO with IPPROTO_TCP or IPPROTO_UDP
+	 * - You *can* replace "is_IPv4" by "true" or "false" and similarly
+	 *   replace "myP" with "\"TCP\"" or \""UDP\"". Instead, you can edit
+	 *   the individual lines where these are used for a neater end result
+	 *
+	 * The rest is non-generic. From this point on, it's suggested to do
+	 * test compiles to see (from reported errors) where changes are still
+	 * required:
+	 * - Remove assignment of nbo_proto
+	 * - Fix up call to nfq_ip_set_transport_header() or
+	 *   nfq_ip6_set_transport_header(),
+	 *   to leave 2 lines from 7 lines starting "if (true) {"
+	 *
+	 * You should now have a filter program which does all that nfq6 did,
+	 * but only for your chosen protocol. Next you can modify it to do the
+	 * actual job you had in mind.
 	 */
 	is_IPv4 = nbo_proto == ETH_P_IP;
 	if (is_IPv4) {
@@ -277,7 +316,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 		myPreviousPROTO = myPROTO;
 		if (myPROTO == IPPROTO_TCP) {
 			xxph = (void **)&tcph;
-			mangler =
+			my_xxp_mangle_ipvy =
 			    is_IPv4 ? nfq_tcp_mangle_ipv4 : nfq_tcp_mangle_ipv6;
 			myP = "TCP";
 			my_xxp_get_hdr = (void *)nfq_tcp_get_hdr;
@@ -289,7 +328,7 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 			    nfq_tcp_get_payload_len;
 		} else if (myPROTO == IPPROTO_UDP) {
 			xxph = (void **)&udph;
-			mangler =
+			my_xxp_mangle_ipvy =
 			    is_IPv4 ? nfq_udp_mangle_ipv4 : nfq_udp_mangle_ipv6;
 			myP = "UDP";
 			my_xxp_get_hdr = (void *)nfq_udp_get_hdr;
@@ -364,37 +403,37 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 	}
 
 	if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
-		mangler(pktb, p - xxp_payload, 3, "F", 1);
+		my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "F", 1);
 		xxp_payload_len -= 2;
 	}
 
 	if (tests[10] && (myPROTO == IPPROTO_UDP || tests[19]) &&
 	    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3))) {
-		if (mangler(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
+		if (my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "RTYUIOP", 7))
 			xxp_payload_len += 4;
 		else
 			fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
 	}
 
 	if (tests[11] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
-		mangler(pktb, p - xxp_payload, 3, "G", 1);
+		my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "G", 1);
 		xxp_payload_len -= 2;
 	}
 
 
 	if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
 	    (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3))) {
-		if (mangler(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
+		if (my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "MNBVCXZ", 7))
 			xxp_payload_len += 4;
 		else
 			fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
 	}
 
 	if (tests[17] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
-		mangler(pktb, p - xxp_payload, 3, "VBN", 3);
+		my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "VBN", 3);
 
 	if (tests[18] && (p = memmem(xxp_payload, xxp_payload_len, "ZXC", 3)))
-		mangler(pktb, p - xxp_payload, 3, "VBN", 3);
+		my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "VBN", 3);
 
  send_verdict:
 	nfq_send_verdict(ntohs(nfg->res_id), id, accept);
