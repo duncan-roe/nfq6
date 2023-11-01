@@ -542,10 +542,10 @@ int main(int argc, char *argv[])
 		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
 				 htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
 				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
+				 htonl(tests[20] ? 0 : NFQA_CFG_F_GSO |
+				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 	}
-	mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
-			 htonl(NFQA_CFG_F_GSO |
-			       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 
 	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 		perror("mnl_socket_send");
