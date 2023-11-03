@@ -159,8 +159,6 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 			exit(EXIT_FAILURE);
 		}
 	}
-	if (quit)
-		exit(0);
 }
 
 /* ******************************** queue_cb ******************************** */
@@ -579,6 +577,8 @@ int main(int argc, char *argv[])
 			if (errno != EINTR)
 				exit(EXIT_FAILURE);
 		}
+		if (quit)
+			break;
 	}
 
 	mnl_socket_close(nl);
