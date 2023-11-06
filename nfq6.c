@@ -58,6 +58,7 @@ static char nlrxbuf[0xffff + 4096];
 static char nltxbuf[sizeof nlrxbuf];
 static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
+static bool sent_q;
 
 static uint32_t packet_mark;
 static int alternate_queue;
@@ -407,8 +408,12 @@ static int queue_cb(const struct nlmsghdr *nlh, void *data)
 
 	if (tests[6] && xxp_payload_len >= 2 && xxp_payload[0] == 'q' &&
 	    isspace(xxp_payload[1])) {
-		accept = false;  /* Drop this packet */
-		quit = true;     /* Exit after giving verdict */
+		if (tests[4] && !sent_q)
+			sent_q = true;
+		else {
+			accept = false;  /* Drop this packet */
+			quit = true;     /* Exit after giving verdict */
+		}
 	}
 
 	if (tests[9] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) {
