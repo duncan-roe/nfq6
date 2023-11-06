@@ -28,9 +28,12 @@
 #include <libnetfilter_queue/libnetfilter_queue_ipv4.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
 
+/* NFQA_CT requires CTA_* attributes defined in nfnetlink_conntrack.h */
+#include <linux/netfilter/nfnetlink_conntrack.h>
+
 /* Macros */
 
-#define NUM_TESTS 21
+#define NUM_TESTS 22
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -87,6 +90,7 @@ static void *(*my_ipy_get_hdr)(struct pkt_buff *);
 static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
 	struct nlmsghdr *nlh;
+	struct nlattr *nest;
 	bool done = false;
 
 	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
@@ -94,6 +98,12 @@ static void nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 	if (!accept) {
 		nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
 		goto send_verdict;
+	}
+
+	if (tests[21]) {
+		nest = mnl_attr_nest_start(nlh, NFQA_CT);
+		mnl_attr_put_u32(nlh, CTA_MARK, htonl(42));
+		mnl_attr_nest_end(nlh, nest);
 	}
 
 	if (tests[0] && !packet_mark) {
@@ -622,6 +632,7 @@ static void usage(void)
 	     "   18: Replace 2nd ZXC by VBN\n"        /*  */
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
 	     "   20: Disable GSO\n"                   /*  */
+	     "   21: Send a nested connmark\n"        /*  */
 	    );
 }
 
