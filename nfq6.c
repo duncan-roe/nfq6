@@ -33,7 +33,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 22
+#define NUM_TESTS 23
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -546,12 +546,14 @@ int main(int argc, char *argv[])
 	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
 	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
-	if (!tests[20] || tests[3]) {
+	if (!tests[20] || tests[3] || tests[22]) {
 		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
 				 htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
+				       (tests[22] ? NFQA_CFG_F_CONNTRACK : 0) |
 				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 		mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
 				 htonl(tests[20] ? 0 : NFQA_CFG_F_GSO |
+				       (tests[22] ? NFQA_CFG_F_CONNTRACK : 0) |
 				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 	}
 
@@ -633,6 +635,7 @@ static void usage(void)
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
 	     "   20: Disable GSO\n"                   /*  */
 	     "   21: Send a nested connmark\n"        /*  */
+	     "   22: Turn on NFQA_CFG_F_CONNTRACK\n"  /*  */
 	    );
 }
 
