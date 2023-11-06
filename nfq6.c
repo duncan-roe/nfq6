@@ -31,6 +31,9 @@
 #include <libnetfilter_queue/libnetfilter_queue_ipv4.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
 
+/* NFQA_CT requires CTA_* attributes defined in nfnetlink_conntrack.h */
+#include <linux/netfilter/nfnetlink_conntrack.h>
+
 /* Macros */
 
 #define NUM_TESTS 20
@@ -87,6 +90,7 @@ static void
 nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 {
 	struct nlmsghdr *nlh;
+	struct nlattr *nest;
 	bool done = false;
 
 	nlh = nfq_nlmsg_put(buf, NFQNL_MSG_VERDICT, queue_num);
@@ -95,6 +99,16 @@ nfq_send_verdict(int queue_num, uint32_t id, bool accept)
 		nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
 		goto send_verdict;
 	}
+
+	/* example to set the connmark. First, start NFQA_CT section: */
+	nest = mnl_attr_nest_start(nlh, NFQA_CT);
+
+	/* then, add the connmark attribute: */
+	mnl_attr_put_u32(nlh, CTA_MARK, htonl(42));
+	/* more conntrack attributes, e.g. CTA_LABELS could be set here */
+
+	/* end conntrack section */
+	mnl_attr_nest_end(nlh, nest);
 
 	if (tests[0] && !packet_mark) {
 		nfq_nlmsg_verdict_put_mark(nlh, 0xbeef);
