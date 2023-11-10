@@ -33,7 +33,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 22
+#define NUM_TESTS 24
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -467,6 +467,7 @@ int main(int argc, char *argv[])
 	unsigned int portid, queue_num;
 	int i;
 	size_t sperrume;         /* Spare room */
+	uint32_t config_flags;
 
 	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
 		switch (i) {
@@ -551,18 +552,17 @@ int main(int argc, char *argv[])
 	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
 	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
-	if (!tests[20] || tests[3]) {
-		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
-				 htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
-				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-		mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
-				 htonl(tests[20] ? 0 : NFQA_CFG_F_GSO |
-				       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-	}
-
-	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
-		perror("mnl_socket_send");
-		exit(EXIT_FAILURE);
+	config_flags = htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
+			     (tests[22] ? NFQA_CFG_F_CONNTRACK : 0) |
+			     (tests[23] ? NFQA_CFG_F_SECCTX : 0) |
+			     (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0));
+	if (config_flags) {
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, config_flags);
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, config_flags);
+		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+			perror("mnl_socket_send");
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	/* ENOBUFS is signalled to userspace when packets were lost
@@ -638,6 +638,8 @@ static void usage(void)
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
 	     "   20: Disable GSO\n"                   /*  */
 	     "   21: Send a nested connmark\n"        /*  */
+	     "   22: Turn on NFQA_CFG_F_CONNTRACK\n"  /*  */
+	     "   23: Turn on NFQA_CFG_F_SECCTX\n"     /*  */
 	    );
 }
 
