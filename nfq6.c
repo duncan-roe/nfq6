@@ -538,8 +538,8 @@ int main(int argc, char *argv[])
 	}
 	getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
 		   &socklen);
-	printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
-	       read_size / (1024 * 1024));
+	printf("Read buffer set to 0x%x bytes (%.3gMB)\n", read_size,
+	       read_size / (1024.0 * 1024));
 
 	nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
 	nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
