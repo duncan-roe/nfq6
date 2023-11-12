@@ -553,16 +553,57 @@ int main(int argc, char *argv[])
 	nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
 	config_flags = htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
-			     (tests[22] ? NFQA_CFG_F_CONNTRACK : 0) |
-			     (tests[23] ? NFQA_CFG_F_SECCTX : 0) |
 			     (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0));
 	if (config_flags) {
 		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, config_flags);
 		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, config_flags);
+	}
+
+	if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+		perror("mnl_socket_send");
+		exit(EXIT_FAILURE);
+	}
+
+	if (tests[23]) {
+		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_SECCTX);
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_SECCTX);
+
 		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 			perror("mnl_socket_send");
 			exit(EXIT_FAILURE);
 		}
+
+		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+		if (ret == -1) {
+			perror("mnl_socket_recvfrom");
+			exit(EXIT_FAILURE);
+		}
+
+		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
+		if (ret == -1)
+			perror("configure NFQA_CFG_F_SECCTX");
+	}
+
+	if (tests[22]) {
+		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_CONNTRACK);
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_CONNTRACK);
+
+		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+			perror("mnl_socket_send");
+			exit(EXIT_FAILURE);
+		}
+
+		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+		if (ret == -1) {
+			perror("mnl_socket_recvfrom");
+			exit(EXIT_FAILURE);
+		}
+
+		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
+		if (ret == -1)
+			perror("configure NFQA_CFG_F_CONNTRACK");
 	}
 
 	/* ENOBUFS is signalled to userspace when packets were lost
