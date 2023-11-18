@@ -565,7 +565,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (tests[23]) {
-		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num,
+				     NLM_F_ACK);
 		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_SECCTX);
 		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_SECCTX);
 
@@ -586,7 +587,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (tests[22]) {
-		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
+		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num,
+				     NLM_F_ACK);
 		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_CONNTRACK);
 		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_CONNTRACK);
 
