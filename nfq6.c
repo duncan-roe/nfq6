@@ -69,6 +69,7 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
+static uint32_t queuelen;
 
 /* Static prototypes */
 
@@ -469,7 +470,7 @@ int main(int argc, char *argv[])
 	size_t sperrume;         /* Spare room */
 	uint32_t config_flags;
 
-	while ((i = getopt(argc, argv, "a:ht:")) != -1) {
+	while ((i = getopt(argc, argv, "a:hq:t:")) != -1) {
 		switch (i) {
 		case 'a':
 			alternate_queue = atoi(optarg);
@@ -485,6 +486,10 @@ int main(int argc, char *argv[])
 		case 'h':
 			usage();
 			return 0;
+
+		case 'q':
+			queuelen = (uint32_t)atoi(optarg);
+			break;
 
 		case 't':
 			ret = atoi(optarg);
@@ -610,6 +615,25 @@ int main(int argc, char *argv[])
 			perror("configure NFQA_CFG_F_CONNTRACK");
 	}
 
+	if (queuelen) {
+		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num,
+				     NLM_F_ACK);
+		mnl_attr_put_u32(nlh, NFQA_CFG_QUEUE_MAXLEN, htonl(queuelen));
+		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
+			perror("mnl_socket_send");
+			exit(EXIT_FAILURE);
+		}
+		ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+		if (ret == -1) {
+			perror("mnl_socket_recvfrom");
+			exit(EXIT_FAILURE);
+		}
+		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
+		if (ret == -1)
+			fprintf(stderr, "Set queue size %d: %s\n", queuelen,
+				strerror(errno));
+	}
+
 	/* ENOBUFS is signalled to userspace when packets were lost
 	 * on kernel side.  In most cases, userspace isn't interested
 	 * in this information, so turn it off.
@@ -652,11 +676,13 @@ static void usage(void)
 {
 /* N.B. Trailing empty comments are there to stop gnu indent joining lines */
 	puts("\nUsage: nfq6 [-a <alt q #>] "    /*  */
-	     "[-t <test #>],... queue_number\n" /*  */
+	     "[-q <queue length>] "             /*  */
+	     "[-t <test #>]... queue_number\n"  /*  */
 	     "       nfq6 -h\n"                 /*  */
-	     "  -a <n>: Alternate queue for test 4\n" /*  */
-	     "  -h: give this Help and exit\n"        /*  */
-	     "  -t <n>: do Test <n>. Tests are:\n"    /*  */
+	     "  -a <n>: Alternate queue for test 4\n"  /*  */
+	     "  -h: give this Help and exit\n"         /*  */
+	     "  -q <n>: Set queue length to <n>\n"     /*  */
+	     "  -t <n>: do Test <n>. Tests are:\n"     /*  */
 	     "    0: If packet mark is zero, set it to 0xbeef and give verdict "
 	     "NF_REPEAT\n"         /*  */
 	     "    1: If packet mark is not 0xfaceb00c, set it to that and give "
