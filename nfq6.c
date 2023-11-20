@@ -567,8 +567,8 @@ int main(int argc, char *argv[])
 	if (tests[23]) {
 		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num,
 				     NLM_F_ACK);
-		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_SECCTX);
-		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_SECCTX);
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_SECCTX));
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_SECCTX));
 
 		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 			perror("mnl_socket_send");
@@ -589,8 +589,10 @@ int main(int argc, char *argv[])
 	if (tests[22]) {
 		nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num,
 				     NLM_F_ACK);
-		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, NFQA_CFG_F_CONNTRACK);
-		mnl_attr_put_u32(nlh, NFQA_CFG_MASK, NFQA_CFG_F_CONNTRACK);
+		mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
+				 htonl(NFQA_CFG_F_CONNTRACK));
+		mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
+				 htonl(NFQA_CFG_F_CONNTRACK));
 
 		if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) {
 			perror("mnl_socket_send");
