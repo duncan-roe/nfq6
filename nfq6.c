@@ -630,7 +630,7 @@ int main(int argc, char *argv[])
 		}
 		ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
 		if (ret == -1)
-			fprintf(stderr, "Set queue size %d: %s\n", queuelen,
+			fprintf(stderr, "Set queue size %u: %s\n", queuelen,
 				strerror(errno));
 	}
 
@@ -684,9 +684,10 @@ static void usage(void)
 	     "  -q <n>: Set queue length to <n>\n"     /*  */
 	     "  -t <n>: do Test <n>. Tests are:\n"     /*  */
 	     "    0: If packet mark is zero, set it to 0xbeef and give verdict "
-	     "NF_REPEAT\n"         /*  */
-	     "    1: If packet mark is not 0xfaceb00c, set it to that and give "
-	     "verdict NF_REPEAT\n" /*  */
+	     "NF_REPEAT\n"                                    /*  */
+	     "    1: If packet mark is not 0xfaceb00c,\n"     /*  */
+	     "       set packet mark to 0xfaceb00c and give " /*  */
+	     "verdict NF_REPEAT.\n"                           /*  */
 	     "       If packet mark *is* 0xfaceb00c, accept the packet\n"
 	     "    2: Allow ENOBUFS to happen; treat as harmless when it does\n"
 	     "    3: Configure NFQA_CFG_F_FAIL_OPEN\n"     /*  */
@@ -700,17 +701,17 @@ static void usage(void)
 	     "   10: Replace 1st QWE by RTYUIOP (UDP packets only)\n"
 	     "   11: Replace 2nd ASD by G\n" /*  */
 	     "   12: Replace 2nd QWE by MNBVCXZ (UDP packets only)\n"
-	     "   13: Set 16MB kernel socket buffer\n" /*  */
-	     "   14: Report EINTR if we get it\n"     /*  */
+	     "   13: Set 16MB kernel socket buffer\n"  /*  */
+	     "   14: Report EINTR if we get it\n"      /*  */
 	     "   15: Log netlink packets with no checksum\n"
-	     "   16: Log all netlink packets\n"       /*  */
-	     "   17: Replace 1st ZXC by VBN\n"        /*  */
-	     "   18: Replace 2nd ZXC by VBN\n"        /*  */
+	     "   16: Log all netlink packets\n"        /*  */
+	     "   17: Replace 1st ZXC by VBN\n"         /*  */
+	     "   18: Replace 2nd ZXC by VBN\n"         /*  */
 	     "   19: Enable tests 10 & 12 for TCP (not recommended)\n"
-	     "   20: Disable GSO\n"                   /*  */
-	     "   21: Send a nested connmark\n"        /*  */
-	     "   22: Turn on NFQA_CFG_F_CONNTRACK\n"  /*  */
-	     "   23: Turn on NFQA_CFG_F_SECCTX\n"     /*  */
+	     "   20: Don't configure NFQA_CFG_F_GSO\n" /*  */
+	     "   21: Send a nested connmark\n"         /*  */
+	     "   22: Turn on NFQA_CFG_F_CONNTRACK\n"   /*  */
+	     "   23: Turn on NFQA_CFG_F_SECCTX\n"      /*  */
 	    );
 }
 
