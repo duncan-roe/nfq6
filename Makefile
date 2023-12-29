@@ -1,7 +1,7 @@
 .PHONY: clean
 SRCS = $(wildcard *.c)
 PROG = $(shell basename $$PWD)
-LIBS = -lmnl -lnetfilter_queue
+LIBS = -lmnl -lnetfilter_queue -lnfnetlink
 OBJ = $(SRCS:.c=.o)
 CPPFLAGS += $(shell getconf LFS_CFLAGS 2>/dev/null)
 CFLAGS += -g3 -gdwarf-4 \
