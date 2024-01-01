@@ -60,8 +60,8 @@ static bool tests[NUM_TESTS] = { false };
 static uint32_t packet_mark;
 static int alternate_queue;
 static bool quit;
-static socklen_t buffersize = 1024 * 1024 * 8;
-static socklen_t socklen = sizeof buffersize, read_size;
+static socklen_t wanted_size = 1024 * 1024 * 8;
+static socklen_t socklen = sizeof wanted_size, read_size;
 static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 
@@ -427,9 +427,9 @@ main(int argc, char *argv[])
   {
     if (setsockopt
       (mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
-      &buffersize, sizeof(socklen_t)) == -1)
+      &wanted_size, sizeof(socklen_t)) == -1)
       fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
-        strerror(errno), buffersize);
+        strerror(errno), wanted_size);
   }
   getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
     &socklen);
