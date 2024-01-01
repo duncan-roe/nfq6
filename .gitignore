@@ -2,6 +2,7 @@ t5*
 *.d
 *.o
 nfq6
+nfq4
 actions*
 hee*
 .~*
