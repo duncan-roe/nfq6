@@ -85,28 +85,26 @@ send_verdict(int queue_num, uint32_t id, bool accept)
   {
     nfq_nlmsg_verdict_put(nlh, id, NF_DROP);
     goto send_verdict;
-  }
+  }                                /* if (!accept) */
 
   if (tests[0] && !packet_mark)
   {
     nfq_nlmsg_verdict_put_mark(nlh, 0xbeef);
     nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
     done = true;
-  }
+  }                                /* if (tests[0] && !packet_mark) */
 
   if (tests[1] && !done)
   {
     if (packet_mark == 0xfaceb00c)
-    {
       nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
-    }
     else
     {
       nfq_nlmsg_verdict_put_mark(nlh, 0xfaceb00c);
       nfq_nlmsg_verdict_put(nlh, id, NF_REPEAT);
-    }
+    }                              /* if (packet_mark == 0xfaceb00c) else */
     done = true;
-  }
+  }                                /* if (tests[1] && !done) */
 
   if (tests[4] && !done)
   {
@@ -114,7 +112,7 @@ send_verdict(int queue_num, uint32_t id, bool accept)
       NF_QUEUE_NR(alternate_queue) |
       (tests[5] ? NF_VERDICT_FLAG_QUEUE_BYPASS : 0));
     done = true;
-  }
+  }                                /* if (tests[4] && !done) */
 
   if (!done)
     nfq_nlmsg_verdict_put(nlh, id, NF_ACCEPT);
@@ -146,8 +144,8 @@ send_verdict(int queue_num, uint32_t id, bool accept)
     {
       perror("sendmsg");
       exit(EXIT_FAILURE);
-    }
-  }
+    }                     /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
+  }                                /* if (pktb_mangled(pktb) && tests[8]) */
   else
   {
     if (pktb_mangled(pktb))
@@ -157,11 +155,11 @@ send_verdict(int queue_num, uint32_t id, bool accept)
     {
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
-    }
-  }
+    }                             /* if (pktb_mangled(pktb) && tests[8]) else */
+  }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
   if (quit)
     exit(0);
-}
+}                                  /* send_verdict() */
 
 /* ******************************** queue_cb ******************************** */
 
@@ -203,7 +201,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     perror("problems parsing");
     return MNL_CB_ERROR;
-  }
+  }                                /* if (nfq_nlmsg_parse(nlh, attr) < 0) */
 
 /* Most of the lines in this next block are individually annotated in
  * nf-queue.c.
@@ -213,7 +211,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     fputs("metaheader not set\n", stderr);
     return MNL_CB_ERROR;
-  }
+  }                                /* if (attr[NFQA_PACKET_HDR] == NULL) */
   ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
   plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
   payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
@@ -228,14 +226,14 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     {
       nc += snprintf(record_buf, sizeof record_buf, "%s", "truncated ");
       normal = false;
-    }
-  }
+    }                              /* if (orig_len != plen) */
+  }                                /* if (attr[NFQA_CAP_LEN]) */
 
   if (skbinfo & NFQA_SKB_GSO)
   {
     nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s", "GSO ");
     normal = false;
-  }
+  }                                /* if (skbinfo & NFQA_SKB_GSO) */
 
   id = ntohl(ph->packet_id);
   nc += snprintf(record_buf + nc, sizeof record_buf - nc, "packet "
@@ -258,7 +256,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       ", checksum not ready");
     if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
       normal = false;
-  }
+  }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
   if (!normal)
     printf("%s)\n", record_buf);
 
@@ -271,17 +269,17 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     pktb = pktb_setup_raw(pb, AF_INET6, payload, plen, *(size_t *)data);
     errfunc = "pktb_setup_raw";
-  }
+  }                                /* if (tests[7]) */
   else
   {
     pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
     errfunc = "pktb_alloc";
-  }
+  }                                /* if (tests[7]) else */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
     GIVE_UP(erbuf);
-  }
+  }                                /* if (!pktb) */
 
   if (!(ip4h = nfq_ip_get_hdr(pktb)))
     GIVE_UP2("Malformed IPv%c\n", true ? '4' : '6');
@@ -299,13 +297,13 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     accept = false;                /* Drop this packet */
     quit = true;                   /* Exit after giving verdict */
-  }
+  }                                /* if (tests[6] && ... */
 
   if (tests[9] && (p = memmem(udp_payload, udp_payload_len, "ASD", 3)))
   {
     nfq_udp_mangle_ipv4(pktb, p - udp_payload, 3, "F", 1);
     udp_payload_len -= 2;
-  }
+  }                                /* if (tests[9] && ... "ASD", 3) */
 
   if (tests[10] && (IPPROTO_UDP == IPPROTO_UDP || tests[19]) &&
     (p = memmem(udp_payload, udp_payload_len, "QWE", 3)))
@@ -314,13 +312,13 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       udp_payload_len += 4;
     else
       fputs("QWE -> RTYUIOP mangle FAILED\n", stderr);
-  }
+  }                                /* if (tests[10] && ... "QWE", 3) */
 
   if (tests[11] && (p = memmem(udp_payload, udp_payload_len, "ASD", 3)))
   {
     nfq_udp_mangle_ipv4(pktb, p - udp_payload, 3, "G", 1);
     udp_payload_len -= 2;
-  }
+  }                                /* if (tests[11] && ... "ASD", 3) */
 
 
   if (tests[12] && (IPPROTO_UDP == IPPROTO_UDP || tests[19]) &&
@@ -330,7 +328,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
       udp_payload_len += 4;
     else
       fputs("QWE -> MNBVCXZ mangle FAILED\n", stderr);
-  }
+  }                                /* if (tests[12] && ... "QWE", 3) */
 
   if (tests[17] && (p = memmem(udp_payload, udp_payload_len, "ZXC", 3)))
     nfq_udp_mangle_ipv4(pktb, p - udp_payload, 3, "VBN", 3);
@@ -345,7 +343,7 @@ send_verdict:
     pktb_free(pktb);
 
   return MNL_CB_OK;
-}
+}                                  /* queue_cb() */
 
 /* ********************************** main ********************************** */
 
@@ -369,7 +367,7 @@ main(int argc, char *argv[])
           fprintf(stderr,
             "Alternate queue number %d is out of range\n", alternate_queue);
           exit(EXIT_FAILURE);
-        }
+        }            /* if (alternate_queue <= 0 || alternate_queue > 0xffff) */
         break;
 
       case 'h':
@@ -382,20 +380,20 @@ main(int argc, char *argv[])
         {
           fprintf(stderr, "Test %d is out of range\n", ret);
           exit(EXIT_FAILURE);
-        }
+        }                          /* if (ret < 0 || ret >= NUM_TESTS) */
         tests[ret] = true;
         break;
 
       case '?':
         exit(EXIT_FAILURE);
-    }
-  }
+    }                              /* switch (i) */
+  }                        /* while ((i = getopt(argc, argv, "a:ht:")) != -1) */
 
   if (argc == optind)
   {
     fputs("Missing queue number\n", stderr);
     exit(EXIT_FAILURE);
-  }
+  }                                /* if (argc == optind) */
   queue_num = atoi(argv[optind]);
 
   if (tests[5])
@@ -405,7 +403,7 @@ main(int argc, char *argv[])
   {
     fputs("Missing alternate queue number for test 4\n", stderr);
     exit(EXIT_FAILURE);
-  }
+  }                                /* if (tests[4] && !alternate_queue) */
 
   setlinebuf(stdout);
 
@@ -414,13 +412,13 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_open");
     exit(EXIT_FAILURE);
-  }
+  }                                /* if (nl == NULL) */
 
   if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0)
   {
     perror("mnl_socket_bind");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) */
   portid = mnl_socket_get_portid(nl);
 
   if (tests[13])
@@ -430,7 +428,7 @@ main(int argc, char *argv[])
       &wanted_size, sizeof(socklen_t)) == -1)
       fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n",
         strerror(errno), wanted_size);
-  }
+  }                                /* if (tests[13]) */
   getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
     &socklen);
   printf("Read buffer set to 0x%x bytes (%dMB)\n", read_size,
@@ -443,7 +441,7 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_send");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
   nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
@@ -453,7 +451,7 @@ main(int argc, char *argv[])
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS,
       htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
       (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
-  }
+  }                                /* if (!tests[20] || tests[3]) */
   mnl_attr_put_u32(nlh, NFQA_CFG_MASK,
     htonl(NFQA_CFG_F_GSO | (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0)));
 
@@ -461,7 +459,7 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_send");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
 /* ENOBUFS is signalled to userspace when packets were lost
  * on kernel side.  In most cases, userspace isn't interested
@@ -471,7 +469,7 @@ main(int argc, char *argv[])
   {
     ret = 1;
     mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
-  }
+  }                                /* if (!tests[2]) */
 
   for (;;)
   {
@@ -482,7 +480,7 @@ main(int argc, char *argv[])
       if (errno == ENOBUFS)
         continue;
       exit(EXIT_FAILURE);
-    }
+    }                              /* if (ret == -1) */
     assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
     sperrume = sizeof nlrxbuf - ret;
 
@@ -492,13 +490,13 @@ main(int argc, char *argv[])
       perror("mnl_cb_run");
       if (errno != EINTR)
         exit(EXIT_FAILURE);
-    }
-  }
+    }                        /* if (ret < 0 && (errno != EINTR || tests[14])) */
+  }                                /* for (;;) */
 
   mnl_socket_close(nl);
 
   return 0;
-}
+}                                  /* main() */
 
 /* ********************************** usage ********************************* */
 
@@ -538,4 +536,4 @@ usage(void)
     "   19: Enable tests 10 & 12 for TCP (not recommended)\n" /* */
     "   20: Disable GSO\n"         /*  */
     );
-}
+}                                  /* usage() */
