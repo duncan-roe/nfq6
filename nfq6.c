@@ -76,7 +76,7 @@ static uint32_t queuelen;
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
-static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
+static void send_verdict(int queue_num, uint32_t id, bool accept);
 
 /* Generic function pointers */
 static int (*my_xxp_mangle_ipvy)(struct pkt_buff *, unsigned int, unsigned int,
@@ -312,10 +312,10 @@ main(int argc, char *argv[])
   return 0;
 }
 
-/* **************************** nfq_send_verdict **************************** */
+/* ****************************** send_verdict ****************************** */
 
 static void
-nfq_send_verdict(int queue_num, uint32_t id, bool accept)
+send_verdict(int queue_num, uint32_t id, bool accept)
 {
   struct nlmsghdr *nlh;
   struct nlattr *nest;
@@ -699,7 +699,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "VBN", 3);
 
 send_verdict:
-  nfq_send_verdict(ntohs(nfg->res_id), id, accept);
+  send_verdict(ntohs(nfg->res_id), id, accept);
 
   if (!tests[7])
     pktb_free(pktb);

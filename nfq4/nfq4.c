@@ -69,12 +69,12 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
-static void nfq_send_verdict(int queue_num, uint32_t id, bool accept);
+static void send_verdict(int queue_num, uint32_t id, bool accept);
 
-/* **************************** nfq_send_verdict **************************** */
+/* ****************************** send_verdict ****************************** */
 
 static void
-nfq_send_verdict(int queue_num, uint32_t id, bool accept)
+send_verdict(int queue_num, uint32_t id, bool accept)
 {
   struct nlmsghdr *nlh;
   bool done = false;
@@ -339,7 +339,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     nfq_udp_mangle_ipv4(pktb, p - udp_payload, 3, "VBN", 3);
 
 send_verdict:
-  nfq_send_verdict(ntohs(nfg->res_id), id, accept);
+  send_verdict(ntohs(nfg->res_id), id, accept);
 
   if (!tests[7])
     pktb_free(pktb);
