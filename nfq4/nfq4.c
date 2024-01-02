@@ -519,7 +519,7 @@ usage(void)
     "    3: Configure NFQA_CFG_F_FAIL_OPEN\n" /* */
     "    4: Send packets to alternate -a queue\n" /*  */
     "    5: Force on test 4 and specify BYPASS\n" /*  */
-    "    6: Exit nfq6 if incoming packet starts \"q[:space:]\"" /* */
+    "    6: Exit nfq6 if incoming packet starts \"q[[:space:]]\"" /* */
     " (e.g. q\\n)\n"               /*  */
     "    7: Use pktb_setup_raw\n"  /*  */
     "    8: Use sendmsg to avoid memcpy after mangling\n" /*  */
