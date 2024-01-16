@@ -607,6 +607,15 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
       normal = false;
   }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
+
+  if (attr[NFQA_IFINDEX_INDEV])
+    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+      ", indev = %u", ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV])));
+
+  if (attr[NFQA_IFINDEX_OUTDEV])
+    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+      ", outdev = %u", ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV])));
+
   if (!normal)
     printf("%s)\n", record_buf);
 
