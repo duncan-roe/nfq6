@@ -3,6 +3,7 @@
 /* System headers */
 
 #define _GNU_SOURCE                /* To get memmem */
+#include <time.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -19,6 +20,7 @@
 #include <libmnl/libmnl.h>
 #include <linux/if_ether.h>
 #include <linux/netfilter.h>
+#include <linux/rtnetlink.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <libnetfilter_queue/pktbuff.h>
 #include <linux/netfilter/nfnetlink_queue.h>
@@ -51,6 +53,20 @@ typedef enum bool
   true
 } bool;
 
+/* Structures */
+
+struct nlif_record
+{
+  uint32_t type;
+  uint32_t flags;
+  char name[IFNAMSIZ];
+};                                 /* struct nlif_record; */
+struct nlif
+{
+  uint32_t num_pointers;
+  struct nlif_record **pointers;
+};                                 /* static struct nlif */
+
 /* Static Variables */
 
 static struct mnl_socket *nl;
@@ -70,15 +86,18 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 static uint32_t queuelen;
+static struct nlif nlif;
 
 /* Static prototypes */
 
+static int data_cb(const struct nlmsghdr *nlh, void *data);
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
 static void send_verdict(int queue_num, uint32_t id, bool accept);
 
 /* Generic function pointers */
+
 static int (*my_xxp_mangle_ipvy)(struct pkt_buff *, unsigned int, unsigned int,
   const char *, unsigned int);
 static void *(*my_xxp_get_hdr)(struct pkt_buff *);
@@ -93,10 +112,13 @@ main(int argc, char *argv[])
 {
   struct nlmsghdr *nlh;
   int ret;
-  unsigned int portid, queue_num;
+  unsigned int portid, queue_num, iportid;
   int i;
   size_t sperrume;                 /* Spare room */
   uint32_t config_flags;
+  uint32_t seq;
+  struct mnl_socket *inl;
+  struct rtgenmsg *rt;
 
   while ((i = getopt(argc, argv, "a:hq:t:")) != -1)
   {
@@ -283,6 +305,47 @@ main(int argc, char *argv[])
     mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
   }                                /* if (!tests[2]) */
 
+/* Init rtnetlink */
+
+  inl = mnl_socket_open(NETLINK_ROUTE);
+  if (!inl)
+  {
+    perror("mnl_socket_open");
+    exit(EXIT_FAILURE);
+  }                                /* if (!inl) */
+
+  if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0)
+  {
+    perror("mnl_socket_bind");
+    exit(EXIT_FAILURE);
+  }
+  iportid = mnl_socket_get_portid(inl);
+
+  nlh = mnl_nlmsg_put_header(nltxbuf);
+  nlh->nlmsg_type = RTM_GETLINK;
+  nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  nlh->nlmsg_seq = seq = time(NULL);
+  rt = mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtgenmsg));
+  rt->rtgen_family = AF_PACKET;
+  if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0)
+  {
+    perror("mnl_socket_sendto");
+    exit(EXIT_FAILURE);
+  }
+  ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
+  while (ret > 0)
+  {
+    ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, data_cb, NULL);
+    if (ret <= MNL_CB_STOP)
+      break;
+    ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
+  }                                /* while (ret > 0) */
+  if (ret == -1)                   /* Need to look for EINTR(?) */
+  {
+    perror("nlif_query");
+    exit(EXIT_FAILURE);
+  }                                /* if (ret == -1) */
+
   for (;;)
   {
     ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
@@ -308,6 +371,8 @@ main(int argc, char *argv[])
   }
 
   mnl_socket_close(nl);
+
+/* LATER free nlif ptrs and close inl */
 
   return 0;
 }
@@ -458,7 +523,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   }
 
 /* Most of the lines in this next block are individually annotated in
- * esamples/nf-queue.c in the libnetfilter_queue source tree.
+ * examples/nf-queue.c in the libnetfilter_queue source tree.
  */
   nfg = mnl_nlmsg_get_payload(nlh);
   if (attr[NFQA_PACKET_HDR] == NULL)
@@ -827,3 +892,66 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
   }
   return nexthdr;
 }                                  /* ip6_get_proto() */
+
+/* ********************************* data_cb ******************************** */
+
+static int
+data_cb(const struct nlmsghdr *nlh, void *data)
+{
+  struct ifinfomsg *ifm = mnl_nlmsg_get_payload(nlh);
+  struct nlattr *attr;
+  size_t extra_bytes;
+  size_t current_bytes;
+
+  if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
+  {
+    errno = EPROTO;
+    return MNL_CB_ERROR;
+  }                              /* if (nlh->nlmsg_type != RTM_NEWLINK && ... */
+
+  if (nlh->nlmsg_type == RTM_NEWLINK)
+  {
+    if (nlif.num_pointers < ifm->ifi_index + 1)
+    {
+      extra_bytes =
+        (ifm->ifi_index + 1 - nlif.num_pointers) * sizeof *nlif.pointers;
+      current_bytes = nlif.num_pointers * sizeof *nlif.pointers;
+      nlif.pointers = realloc(nlif.pointers, current_bytes + extra_bytes);
+      if (!nlif.pointers)
+        return MNL_CB_ERROR;       /* ENOMEM */
+      memset(&nlif.pointers[nlif.num_pointers], 0, extra_bytes);
+      nlif.num_pointers = ifm->ifi_index + 1;
+    }                              /* if (nlif.num_pointers < ifm->ifi_index) */
+    if (!nlif.pointers[ifm->ifi_index])
+    {
+      nlif.pointers[ifm->ifi_index] = malloc(sizeof(struct nlif_record));
+      if (!nlif.pointers[ifm->ifi_index])
+        return MNL_CB_ERROR;       /* ENOMEM */
+    }                              /* if (!nlif.pointers[ifm->ifi_index]) */
+
+    nlif.pointers[ifm->ifi_index]->type = ifm->ifi_type;
+    nlif.pointers[ifm->ifi_index]->flags = ifm->ifi_flags;
+    nlif.pointers[ifm->ifi_index]->name[0] = 0;
+
+    mnl_attr_for_each(attr, nlh, sizeof(*ifm))
+    {
+
+/* All we want is the interface name */
+      if (mnl_attr_get_type(attr) == IFLA_IFNAME)
+      {
+        if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+        {
+          perror("mnl_attr_validate");
+          return MNL_CB_ERROR;
+        }                /* if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) */
+        strcpy(nlif.pointers[ifm->ifi_index]->name, mnl_attr_get_str(attr));
+      }                         /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
+
+    }                           /* mnl_attr_for_each(attr, nlh, sizeof(*ifm)) */
+    return MNL_CB_OK;
+  }                                /* if (nlh->nlmsg_type == RTM_NEWLINK) */
+  else
+  {
+    return MNL_CB_OK;
+  }                               /* if (nlh->nlmsg_type == RTM_NEWLINK) else */
+}                                  /* data_cb() */
