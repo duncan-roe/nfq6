@@ -674,12 +674,20 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
 
   if (attr[NFQA_IFINDEX_INDEV])
+  {
+    uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
+
     nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", indev = %u", ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV])));
+      ", indev = %u(%s)", indev, nlif.pointers[indev]->name);
+  }                                /* if (attr[NFQA_IFINDEX_INDEV]) */
 
   if (attr[NFQA_IFINDEX_OUTDEV])
+  {
+    uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
+
     nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", outdev = %u", ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV])));
+      ", outdev = %u(%s)", outdev, nlif.pointers[outdev]->name);
+  }                                /* if (attr[NFQA_IFINDEX_OUTDEV]) */
 
   if (!normal)
     printf("%s)\n", record_buf);
@@ -909,49 +917,49 @@ data_cb(const struct nlmsghdr *nlh, void *data)
     return MNL_CB_ERROR;
   }                              /* if (nlh->nlmsg_type != RTM_NEWLINK && ... */
 
-  if (nlh->nlmsg_type == RTM_NEWLINK)
+/* RTM_DELLINK is simple, do it first for less indenting */
+  if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    if (nlif.num_pointers < ifm->ifi_index + 1)
-    {
-      extra_bytes =
-        (ifm->ifi_index + 1 - nlif.num_pointers) * sizeof *nlif.pointers;
-      current_bytes = nlif.num_pointers * sizeof *nlif.pointers;
-      nlif.pointers = realloc(nlif.pointers, current_bytes + extra_bytes);
-      if (!nlif.pointers)
-        return MNL_CB_ERROR;       /* ENOMEM */
-      memset(&nlif.pointers[nlif.num_pointers], 0, extra_bytes);
-      nlif.num_pointers = ifm->ifi_index + 1;
-    }                              /* if (nlif.num_pointers < ifm->ifi_index) */
+    free(nlif.pointers[ifm->ifi_index]);
+    nlif.pointers[ifm->ifi_index] = NULL;
+    return MNL_CB_OK;
+  }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
+
+  if (nlif.num_pointers < ifm->ifi_index + 1)
+  {
+    extra_bytes =
+      (ifm->ifi_index + 1 - nlif.num_pointers) * sizeof *nlif.pointers;
+    current_bytes = nlif.num_pointers * sizeof *nlif.pointers;
+    nlif.pointers = realloc(nlif.pointers, current_bytes + extra_bytes);
+    if (!nlif.pointers)
+      return MNL_CB_ERROR;         /* ENOMEM */
+    memset(&nlif.pointers[nlif.num_pointers], 0, extra_bytes);
+    nlif.num_pointers = ifm->ifi_index + 1;
+  }                                /* if (nlif.num_pointers < ifm->ifi_index) */
+
+  if (!nlif.pointers[ifm->ifi_index])
+  {
+    nlif.pointers[ifm->ifi_index] = malloc(sizeof(struct nlif_record));
     if (!nlif.pointers[ifm->ifi_index])
-    {
-      nlif.pointers[ifm->ifi_index] = malloc(sizeof(struct nlif_record));
-      if (!nlif.pointers[ifm->ifi_index])
-        return MNL_CB_ERROR;       /* ENOMEM */
-    }                              /* if (!nlif.pointers[ifm->ifi_index]) */
+      return MNL_CB_ERROR;         /* ENOMEM */
+  }                                /* if (!nlif.pointers[ifm->ifi_index]) */
 
-    nlif.pointers[ifm->ifi_index]->type = ifm->ifi_type;
-    nlif.pointers[ifm->ifi_index]->flags = ifm->ifi_flags;
-    nlif.pointers[ifm->ifi_index]->name[0] = 0;
+  nlif.pointers[ifm->ifi_index]->type = ifm->ifi_type;
+  nlif.pointers[ifm->ifi_index]->flags = ifm->ifi_flags;
+  nlif.pointers[ifm->ifi_index]->name[0] = 0;
 
-    mnl_attr_for_each(attr, nlh, sizeof(*ifm))
-    {
-
-/* All we want is the interface name */
-      if (mnl_attr_get_type(attr) == IFLA_IFNAME)
-      {
-        if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
-        {
-          perror("mnl_attr_validate");
-          return MNL_CB_ERROR;
-        }                /* if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) */
-        strcpy(nlif.pointers[ifm->ifi_index]->name, mnl_attr_get_str(attr));
-      }                         /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
-
-    }                           /* mnl_attr_for_each(attr, nlh, sizeof(*ifm)) */
-    return MNL_CB_OK;
-  }                                /* if (nlh->nlmsg_type == RTM_NEWLINK) */
-  else
+  mnl_attr_for_each(attr, nlh, sizeof(*ifm))
   {
-    return MNL_CB_OK;
-  }                               /* if (nlh->nlmsg_type == RTM_NEWLINK) else */
+/* All we want is the interface name */
+    if (mnl_attr_get_type(attr) == IFLA_IFNAME)
+    {
+      if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+      {
+        perror("mnl_attr_validate");
+        return MNL_CB_ERROR;
+      }                  /* if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) */
+      strcpy(nlif.pointers[ifm->ifi_index]->name, mnl_attr_get_str(attr));
+    }                           /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
+  }                             /* mnl_attr_for_each(attr, nlh, sizeof(*ifm)) */
+  return MNL_CB_OK;
 }                                  /* data_cb() */
