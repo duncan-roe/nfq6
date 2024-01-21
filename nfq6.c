@@ -908,8 +908,8 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifm = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  size_t extra_bytes;
-  size_t current_bytes;
+  uint32_t extra_recs;
+  static const size_t nlif_rec_size = MNL_ALIGN(sizeof(struct nlif_record));
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
   {
@@ -920,22 +920,20 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 /* RTM_DELLINK is simple, do it first for less indenting */
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    free(nlif.pointers[ifm->ifi_index]);
-    nlif.pointers[ifm->ifi_index] = NULL;
+    memset(&nlif.pointers[ifm->ifi_index], 0, nlif_rec_size);
     return MNL_CB_OK;
   }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
 
-  if (nlif.num_pointers < ifm->ifi_index + 1)
+  extra_recs = ifm->ifi_index + 1 - nlif.num_pointers;
+  if (extra_recs > 0)
   {
-    extra_bytes =
-      (ifm->ifi_index + 1 - nlif.num_pointers) * sizeof *nlif.pointers;
-    current_bytes = nlif.num_pointers * sizeof *nlif.pointers;
-    nlif.pointers = realloc(nlif.pointers, current_bytes + extra_bytes);
+    nlif.pointers =
+      realloc(nlif.pointers, (nlif.num_pointers + extra_recs) * nlif_rec_size);
     if (!nlif.pointers)
       return MNL_CB_ERROR;         /* ENOMEM */
-    memset(&nlif.pointers[nlif.num_pointers], 0, extra_bytes);
-    nlif.num_pointers = ifm->ifi_index + 1;
-  }                                /* if (nlif.num_pointers < ifm->ifi_index) */
+    memset(&nlif.pointers[nlif.num_pointers], 0, extra_recs * nlif_rec_size);
+    nlif.num_pointers += extra_recs;
+  }                                /* if (extra_recs > 0) */
 
   if (!nlif.pointers[ifm->ifi_index])
   {
