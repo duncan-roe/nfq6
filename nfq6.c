@@ -3,6 +3,7 @@
 /* System headers */
 
 #define _GNU_SOURCE                /* To get memmem */
+#include <poll.h>
 #include <time.h>
 #include <ctype.h>
 #include <errno.h>
@@ -87,6 +88,8 @@ static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 static uint32_t queuelen;
 static struct nlif nlif;
+static int qfd = -1;
+static int ifd = -1;
 
 /* Static prototypes */
 
@@ -119,6 +122,7 @@ main(int argc, char *argv[])
   uint32_t seq;
   struct mnl_socket *inl;
   struct rtgenmsg *rt;
+  struct pollfd fds[2];
 
   while ((i = getopt(argc, argv, "a:hq:t:")) != -1)
   {
@@ -161,7 +165,7 @@ main(int argc, char *argv[])
   {
     fputs("Missing queue number\n", stderr);
     exit(EXIT_FAILURE);
-  }
+  }                                /* if (argc == optind) */
   queue_num = atoi(argv[optind]);
 
   if (tests[5])
@@ -180,24 +184,24 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_open");
     exit(EXIT_FAILURE);
-  }
+  }                                /* if (nl == NULL) */
 
   if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0)
   {
     perror("mnl_socket_bind");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_bind(nl, 0, MNL_SOCKET_AUTOPID) < 0) */
   portid = mnl_socket_get_portid(nl);
+  qfd = mnl_socket_get_fd(nl);
 
   if (tests[13])
   {
-    if (setsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUFFORCE,
+    if (setsockopt(qfd, SOL_SOCKET, SO_RCVBUFFORCE,
       &wanted_size, sizeof(socklen_t)) == -1)
       fprintf(stderr, "%s. setsockopt SO_RCVBUFFORCE 0x%x\n", strerror(errno),
         wanted_size);
   }                                /* if (tests[13]) */
-  getsockopt(mnl_socket_get_fd(nl), SOL_SOCKET, SO_RCVBUF, &read_size,
-    &socklen);
+  getsockopt(qfd, SOL_SOCKET, SO_RCVBUF, &read_size, &socklen);
   printf("Read buffer set to 0x%x bytes (%.3gMB)\n", read_size,
     read_size / (1024.0 * 1024));
 
@@ -208,7 +212,7 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_send");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
   nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
   nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
@@ -225,7 +229,7 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_send");
     exit(EXIT_FAILURE);
-  }
+  }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
   if (tests[23])
   {
@@ -237,14 +241,14 @@ main(int argc, char *argv[])
     {
       perror("mnl_socket_send");
       exit(EXIT_FAILURE);
-    }
+    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
     ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
-    }
+    }                              /* if (ret == -1) */
 
     ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
@@ -261,14 +265,14 @@ main(int argc, char *argv[])
     {
       perror("mnl_socket_send");
       exit(EXIT_FAILURE);
-    }
+    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
     ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
-    }
+    }                              /* if (ret == -1) */
 
     ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
@@ -283,13 +287,13 @@ main(int argc, char *argv[])
     {
       perror("mnl_socket_send");
       exit(EXIT_FAILURE);
-    }
+    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
     ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
-    }
+    }                              /* if (ret == -1) */
     ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
       fprintf(stderr, "Set queue size %u: %s\n", queuelen, strerror(errno));
@@ -313,12 +317,13 @@ main(int argc, char *argv[])
     perror("mnl_socket_open");
     exit(EXIT_FAILURE);
   }                                /* if (!inl) */
+  ifd = mnl_socket_get_fd(inl);
 
   if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0)
   {
     perror("mnl_socket_bind");
     exit(EXIT_FAILURE);
-  }
+  }                   /* if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0) */
   iportid = mnl_socket_get_portid(inl);
 
   nlh = mnl_nlmsg_put_header(nltxbuf);
@@ -331,7 +336,7 @@ main(int argc, char *argv[])
   {
     perror("mnl_socket_sendto");
     exit(EXIT_FAILURE);
-  }
+  }                   /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
   ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
   while (ret > 0)
   {
@@ -346,36 +351,69 @@ main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }                                /* if (ret == -1) */
 
+/* Set up for poll() */
+  fds[0].fd = ifd;
+  fds[0].events = POLLIN;
+  fds[1].fd = qfd;
+  fds[1].events = POLLIN;
+
   for (;;)
   {
-    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+    do
+      ret = poll((struct pollfd *)&fds, 2, -1);
+    while (ret == -1 && errno == EINTR);
     if (ret == -1)
     {
-      perror("mnl_socket_recvfrom");
-      if (errno == ENOBUFS)
-        continue;
+      perror("poll");
       exit(EXIT_FAILURE);
-    }
-    assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
-    sperrume = sizeof nlrxbuf - ret;
+    }                              /* if (ret == -1) */
 
-    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
-    if (ret < 0 && (errno != EINTR || tests[14]))
+    if (fds[0].revents & POLLIN)
     {
-      perror("mnl_cb_run");
-      if (errno != EINTR)
+      ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof nlrxbuf);
+      if (ret == -1)
+      {
+        perror("mnl_socket_recvfrom");
         exit(EXIT_FAILURE);
-    }
-    if (quit)
-      break;
-  }
+      }                            /* if (ret == -1) */
+      ret = mnl_cb_run(nlrxbuf, ret, 0, iportid, data_cb, NULL);
+      if (ret == -1)
+      {
+        perror("mnl_cb_run (data)");
+        exit(EXIT_FAILURE);
+      }                            /* if (ret == -1) */
+    }                              /* if (fds[0].revents & POLLIN) */
+
+    if (fds[1].revents & POLLIN)
+    {
+      ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
+      if (ret == -1)
+      {
+        perror("mnl_socket_recvfrom");
+        if (errno == ENOBUFS)
+          continue;
+        exit(EXIT_FAILURE);
+      }                            /* if (ret == -1) */
+      assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
+      sperrume = sizeof nlrxbuf - ret;
+
+      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
+      if (ret < 0 && (errno != EINTR || tests[14]))
+      {
+        perror("mnl_cb_run");
+        if (errno != EINTR)
+          exit(EXIT_FAILURE);
+      }                      /* if (ret < 0 && (errno != EINTR || tests[14])) */
+      if (quit)
+        break;
+    }                              /* if (fds[1].revents & POLLIN) */
+  }                                /* for (;;) */
 
   mnl_socket_close(nl);
-
-/* LATER free nlif ptrs and close inl */
+  mnl_socket_close(inl);
 
   return 0;
-}
+}                                  /* main() */
 
 /* ****************************** send_verdict ****************************** */
 
@@ -454,11 +492,11 @@ send_verdict(int queue_num, uint32_t id, bool accept)
     iov[1].iov_base = pktb_data(pktb);
     iov[1].iov_len = len;
     nlh->nlmsg_len += len;
-    if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0)
+    if (sendmsg(qfd, &msg, 0) < 0)
     {
       perror("sendmsg");
       exit(EXIT_FAILURE);
-    }                     /* if (sendmsg(mnl_socket_get_fd(nl), &msg, 0) < 0) */
+    }                              /* if (sendmsg(qfd, &msg, 0) < 0) */
   }                                /* if (pktb_mangled(pktb) && tests[8]) */
   else
   {
@@ -471,7 +509,7 @@ send_verdict(int queue_num, uint32_t id, bool accept)
       exit(EXIT_FAILURE);
     }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
   }                                /* if (pktb_mangled(pktb) && tests[8] else */
-}
+}                                  /* send_verdict() */
 
 /* ******************************** queue_cb ******************************** */
 
@@ -520,7 +558,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     perror("problems parsing");
     return MNL_CB_ERROR;
-  }
+  }                                /* if (nfq_nlmsg_parse(nlh, attr) < 0) */
 
 /* Most of the lines in this next block are individually annotated in
  * examples/nf-queue.c in the libnetfilter_queue source tree.
@@ -530,7 +568,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     fputs("metaheader not set\n", stderr);
     return MNL_CB_ERROR;
-  }
+  }                                /* if (attr[NFQA_PACKET_HDR] == NULL) */
   ph = mnl_attr_get_payload(attr[NFQA_PACKET_HDR]);
   plen = mnl_attr_get_payload_len(attr[NFQA_PAYLOAD]);
   payload = mnl_attr_get_payload(attr[NFQA_PAYLOAD]);
@@ -763,7 +801,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "G", 1);
     xxp_payload_len -= 2;
-  }
+  } /* if (tests[11] && (p = memmem(xxp_payload, xxp_payload_len, "ASD", 3))) */
 
   if (tests[12] && (myPROTO == IPPROTO_UDP || tests[19]) &&
     (p = memmem(xxp_payload, xxp_payload_len, "QWE", 3)))
@@ -787,7 +825,7 @@ send_verdict:
     pktb_free(pktb);
 
   return MNL_CB_OK;
-}
+}                                  /* queue_cb() */
 
 /* ********************************** usage ********************************* */
 
@@ -867,7 +905,7 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
     {
       nexthdr = IPPROTO_NONE;
       break;
-    }
+    }                         /* if (pkt_tail - cur < sizeof(struct ip6_ext)) */
     ip6_ext = (struct ip6_ext *)cur;
 
     if (nexthdr == IPPROTO_FRAGMENT)
@@ -878,7 +916,7 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
       {
         nexthdr = IPPROTO_NONE;
         break;
-      }
+      }                      /* if (pkt_tail - cur < sizeof(struct ip6_frag)) */
 
 /* Fragment offset is only 13 bits long. */
       if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) & ~0x7)
@@ -887,9 +925,9 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 /* Not the first fragment, it does not contain any headers. */
         nexthdr = IPPROTO_NONE;
         break;
-      }
+      }            /* if (ntohs(((struct ip6_frag *)cur)->ip6f_offlg) & ~0x7) */
       hdrlen = sizeof(struct ip6_frag);
-    }
+    }                              /* if (nexthdr == IPPROTO_FRAGMENT) */
     else if (nexthdr == IPPROTO_AH)
       hdrlen = (ip6_ext->ip6e_len + 2) << 2;
     else
