@@ -319,7 +319,7 @@ main(int argc, char *argv[])
   }                                /* if (!inl) */
   ifd = mnl_socket_get_fd(inl);
 
-  if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0)
+  if (mnl_socket_bind(inl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
   {
     perror("mnl_socket_bind");
     exit(EXIT_FAILURE);
@@ -946,7 +946,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifm = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  uint32_t extra_recs;
+  int extra_recs;
   static const size_t nlif_rec_size = MNL_ALIGN(sizeof(struct nlif_record));
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
@@ -995,6 +995,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
         return MNL_CB_ERROR;
       }                  /* if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) */
       strcpy(nlif.pointers[ifm->ifi_index]->name, mnl_attr_get_str(attr));
+      break;
     }                           /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
   }                             /* mnl_attr_for_each(attr, nlh, sizeof(*ifm)) */
   return MNL_CB_OK;
