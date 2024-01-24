@@ -37,6 +37,9 @@
 /* Macros */
 
 #define NUM_TESTS 24
+#define NUM_NLIF_BITS 4
+#define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
+#define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -56,17 +59,18 @@ typedef enum bool
 
 /* Structures */
 
-struct nlif_record
+struct ifindex_node
 {
+  struct list_head head;           /* i.e. list in this bucket */
+  uint32_t index;
   uint32_t type;
   uint32_t flags;
   char name[IFNAMSIZ];
-};                                 /* struct nlif_record; */
-struct nlif
+};                                 /* struct ifindex_node; */
+struct nlif_handle
 {
-  uint32_t num_pointers;
-  struct nlif_record **pointers;
-};                                 /* static struct nlif */
+  struct list_head ifindex_hash[NUM_NLIF_ENTRIES];
+};                                 /* static struct nlif_handle */
 
 /* Static Variables */
 
@@ -87,12 +91,13 @@ static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 static uint32_t queuelen;
-static struct nlif nlif;
+static struct nlif_handle ih;
 static int qfd = -1;
 static int ifd = -1;
 
 /* Static prototypes */
 
+static struct ifindex_node *find_ifindex_node(uint32_t index);
 static int data_cb(const struct nlmsghdr *nlh, void *data);
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
@@ -308,6 +313,12 @@ main(int argc, char *argv[])
     ret = 1;
     mnl_socket_setsockopt(nl, NETLINK_NO_ENOBUFS, &ret, sizeof(int));
   }                                /* if (!tests[2]) */
+
+/* Init rtnetlink sructures */
+
+  //memset(&ih, 0, sizeof ih);     /* Static, will be zeroes */
+  for (i = 0; i < NUM_NLIF_ENTRIES; i++)
+    INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
 /* Init rtnetlink */
 
@@ -553,6 +564,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   uint16_t nbo_proto;
   bool is_IPv4;
   static bool was_IPv4;
+  struct ifindex_node *this = NULL;
 
   if (nfq_nlmsg_parse(nlh, attr) < 0)
   {
@@ -715,16 +727,18 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
 
+    this = find_ifindex_node(indev);
     nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", indev = %u(%s)", indev, nlif.pointers[indev]->name);
+      ", indev = %u(%s)", indev, this ? this->name : "");
   }                                /* if (attr[NFQA_IFINDEX_INDEV]) */
 
   if (attr[NFQA_IFINDEX_OUTDEV])
   {
     uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
 
+    this = find_ifindex_node(outdev);
     nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", outdev = %u(%s)", outdev, nlif.pointers[outdev]->name);
+      ", outdev = %u(%s)", outdev, this ? this->name : "");
   }                                /* if (attr[NFQA_IFINDEX_OUTDEV]) */
 
   if (!normal)
@@ -944,10 +958,10 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
 static int
 data_cb(const struct nlmsghdr *nlh, void *data)
 {
-  struct ifinfomsg *ifm = mnl_nlmsg_get_payload(nlh);
+  struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  int extra_recs;
-  static const size_t nlif_rec_size = MNL_ALIGN(sizeof(struct nlif_record));
+  struct ifindex_node *this, *tmp;
+  uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;;
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
   {
@@ -958,33 +972,31 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 /* RTM_DELLINK is simple, do it first for less indenting */
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    memset(&nlif.pointers[ifm->ifi_index], 0, nlif_rec_size);
+    list_for_each_entry_safe(this, tmp, &ih.ifindex_hash[hash], head)
+    {
+      if (this->index == ifi_msg->ifi_index)
+      {
+        list_del(&this->head);
+        free(this);
+      }                            /* if (this->index == ifi_msg->ifi_index) */
+    }   /* list_for_each_entry_safe(this, tmp, &ih->ifindex_hash[hash], head) */
     return MNL_CB_OK;
   }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
 
-  extra_recs = ifm->ifi_index + 1 - nlif.num_pointers;
-  if (extra_recs > 0)
+  this = find_ifindex_node(ifi_msg->ifi_index);
+  if (!this)
   {
-    nlif.pointers =
-      realloc(nlif.pointers, (nlif.num_pointers + extra_recs) * nlif_rec_size);
-    if (!nlif.pointers)
-      return MNL_CB_ERROR;         /* ENOMEM */
-    memset(&nlif.pointers[nlif.num_pointers], 0, extra_recs * nlif_rec_size);
-    nlif.num_pointers += extra_recs;
-  }                                /* if (extra_recs > 0) */
+    this = malloc(sizeof(*this));
+    if (!this)
+      return MNL_CB_ERROR;
+    this->index = ifi_msg->ifi_index;
+    this->type = ifi_msg->ifi_type;
+    this->flags = ifi_msg->ifi_flags;
+    this->name[0] = 0;
+    list_add(&this->head, &ih.ifindex_hash[hash]);
+  }                                /* if (!this) */
 
-  if (!nlif.pointers[ifm->ifi_index])
-  {
-    nlif.pointers[ifm->ifi_index] = malloc(sizeof(struct nlif_record));
-    if (!nlif.pointers[ifm->ifi_index])
-      return MNL_CB_ERROR;         /* ENOMEM */
-  }                                /* if (!nlif.pointers[ifm->ifi_index]) */
-
-  nlif.pointers[ifm->ifi_index]->type = ifm->ifi_type;
-  nlif.pointers[ifm->ifi_index]->flags = ifm->ifi_flags;
-  nlif.pointers[ifm->ifi_index]->name[0] = 0;
-
-  mnl_attr_for_each(attr, nlh, sizeof(*ifm))
+  mnl_attr_for_each(attr, nlh, sizeof(*ifi_msg))
   {
 /* All we want is the interface name */
     if (mnl_attr_get_type(attr) == IFLA_IFNAME)
@@ -994,9 +1006,33 @@ data_cb(const struct nlmsghdr *nlh, void *data)
         perror("mnl_attr_validate");
         return MNL_CB_ERROR;
       }                  /* if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) */
-      strcpy(nlif.pointers[ifm->ifi_index]->name, mnl_attr_get_str(attr));
+      strcpy(this->name, mnl_attr_get_str(attr));
       break;
     }                           /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
-  }                             /* mnl_attr_for_each(attr, nlh, sizeof(*ifm)) */
+  }                         /* mnl_attr_for_each(attr, nlh, sizeof(*ifi_msg)) */
   return MNL_CB_OK;
 }                                  /* data_cb() */
+
+/* **************************** find_ifindex_node *************************** */
+
+static struct ifindex_node *
+find_ifindex_node(uint32_t index)
+{
+  struct ifindex_node *result;
+  uint32_t hash;
+
+  if (index == 0)
+  {
+    errno = ENOENT;
+    return NULL;
+  }                                /* if (index == 0) */
+
+  hash = index & NLIF_ENTRY_MASK;
+  list_for_each_entry(result, &ih.ifindex_hash[hash], head)
+  {
+    if (result->index == index)
+      return result;
+  }              /* list_for_each_entry(result, &ih.ifindex_hash[hash], head) */
+  errno = ENOENT;
+  return NULL;
+}                                  /* find_ifindex_node() */
