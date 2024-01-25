@@ -1,3 +1,4 @@
+/* >%---- CODE_STARTS nfq6.c */
 /* N F Q 6 */
 
 /* System headers */
