@@ -1,10 +1,8 @@
-/* >%---- CODE_STARTS nfq6.c */
 /* N F Q 6 */
 
 /* System headers */
 
 #define _GNU_SOURCE                /* To get memmem */
-/* >%---- KEEP2HERE nfq6.c */
 #include <poll.h>
 #include <time.h>
 #include <ctype.h>
@@ -32,12 +30,9 @@
 #include <libnetfilter_queue/libnetfilter_queue_udp.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv4.h>
 #include <libnetfilter_queue/libnetfilter_queue_ipv6.h>
-/* >%---- CUT_HERE nfq6.c */
 
 /* NFQA_CT requires CTA_* attributes defined in nfnetlink_conntrack.h */
-/* >%---- KEEP2HERE nfq6.c */
 #include <linux/netfilter/nfnetlink_conntrack.h>
-/* >%---- CUT_HERE nfq6.c */
 
 /* Macros */
 
