@@ -321,7 +321,6 @@ main(int argc, char *argv[])
 
 /* Init rtnetlink sructures */
 
-  //memset(&ih, 0, sizeof ih);     /* Static, will be zeroes */
   for (i = 0; i < NUM_NLIF_ENTRIES; i++)
     INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
@@ -965,8 +964,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  struct ifindex_node *this, *tmp;
-  uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;;
+  struct ifindex_node *this = find_ifindex_node(ifi_msg->ifi_index);
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
   {
@@ -974,23 +972,26 @@ data_cb(const struct nlmsghdr *nlh, void *data)
     return MNL_CB_ERROR;
   }                              /* if (nlh->nlmsg_type != RTM_NEWLINK && ... */
 
+/*
+ * rtnetlink.c used list_for_each_entry_safe() and removed all entries with the
+ * wanted index number.
+ * But we know there can be at max one entry, so delete it if we have one.
+ */
 /* RTM_DELLINK is simple, do it first for less indenting */
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    list_for_each_entry_safe(this, tmp, &ih.ifindex_hash[hash], head)
+    if (this)
     {
-      if (this->index == ifi_msg->ifi_index)
-      {
-        list_del(&this->head);
-        free(this);
-      }                            /* if (this->index == ifi_msg->ifi_index) */
-    }   /* list_for_each_entry_safe(this, tmp, &ih->ifindex_hash[hash], head) */
+      list_del(&this->head);
+      free(this);
+    }                              /* if (this) */
     return MNL_CB_OK;
   }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
 
-  this = find_ifindex_node(ifi_msg->ifi_index);
   if (!this)
   {
+    uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
+
     this = malloc(sizeof(*this));
     if (!this)
       return MNL_CB_ERROR;
