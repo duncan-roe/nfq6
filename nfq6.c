@@ -36,7 +36,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 24
+#define NUM_TESTS 25
 #define NUM_NLIF_BITS 4
 #define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
 #define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
@@ -70,6 +70,8 @@ struct ifindex_node
 struct nlif_handle
 {
   struct list_head ifindex_hash[NUM_NLIF_ENTRIES];
+  uint32_t num_pointers;
+  struct ifindex_node **pointers;
 };                                 /* static struct nlif_handle */
 
 /* Static Variables */
@@ -316,8 +318,9 @@ main(int argc, char *argv[])
 
 /* Init rtnetlink sructures */
 
-  for (i = 0; i < NUM_NLIF_ENTRIES; i++)
-    INIT_LIST_HEAD(&ih.ifindex_hash[i]);
+  if (!tests[24])
+    for (i = 0; i < NUM_NLIF_ENTRIES; i++)
+      INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
 /* Init rtnetlink */
 
@@ -726,18 +729,30 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
 
-    this = find_ifindex_node(indev);
-    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", indev = %u(%s)", indev, this ? this->name : "");
+    if (tests[24])
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", indev = %u(%s)", indev, ih.pointers[indev]->name);
+    else
+    {
+      this = find_ifindex_node(indev);
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", indev = %u(%s)", indev, this ? this->name : "");
+    }                              /* if (tests[24]) else */
   }                                /* if (attr[NFQA_IFINDEX_INDEV]) */
 
   if (attr[NFQA_IFINDEX_OUTDEV])
   {
     uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
 
-    this = find_ifindex_node(outdev);
-    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", outdev = %u(%s)", outdev, this ? this->name : "");
+    if (tests[24])
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", outdev = %u(%s)", outdev, ih.pointers[outdev]->name);
+    else
+    {
+      this = find_ifindex_node(outdev);
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", outdev = %u(%s)", outdev, this ? this->name : "");
+    }                              /* if (tests[24]) else */
   }                                /* if (attr[NFQA_IFINDEX_OUTDEV]) */
 
   if (!normal)
@@ -882,6 +897,7 @@ usage(void)
     "   21: Send a nested connmark\n" /*  */
     "   22: Turn on NFQA_CFG_F_CONNTRACK\n" /*  */
     "   23: Turn on NFQA_CFG_F_SECCTX\n" /*  */
+    "   24: Access ih nodes via indexed (sparse) array\n" /*  */
     );
 }                                  /* static void usage(void) */
 
@@ -959,13 +975,18 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  struct ifindex_node *this = find_ifindex_node(ifi_msg->ifi_index);
+  int extra_recs;
+  static const size_t nlif_node_size = MNL_ALIGN(sizeof(struct ifindex_node));
+  struct ifindex_node *this = NULL;
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
   {
     errno = EPROTO;
     return MNL_CB_ERROR;
   }                              /* if (nlh->nlmsg_type != RTM_NEWLINK && ... */
+
+  if (!tests[24])
+    this = find_ifindex_node(ifi_msg->ifi_index);
 
 /*
  * rtnetlink.c used list_for_each_entry_safe() and removed all entries with the
@@ -975,27 +996,60 @@ data_cb(const struct nlmsghdr *nlh, void *data)
 /* RTM_DELLINK is simple, do it first for less indenting */
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    if (this)
+    if (tests[24])
+      memset(&ih.pointers[ifi_msg->ifi_index], 0, nlif_node_size);
+    else
     {
-      list_del(&this->head);
-      free(this);
-    }                              /* if (this) */
+      if (this)
+      {
+        list_del(&this->head);
+        free(this);
+      }                            /* if (this) */
+    }                              /* if (tests[24]) else */
     return MNL_CB_OK;
   }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
 
-  if (!this)
+  if (tests[24])
   {
-    uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
+    extra_recs = ifi_msg->ifi_index + 1 - ih.num_pointers;
+    if (extra_recs > 0)
+    {
+      ih.pointers =
+        realloc(ih.pointers, (ih.num_pointers + extra_recs) * nlif_node_size);
+      if (!ih.pointers)
 
-    this = malloc(sizeof(*this));
+        return MNL_CB_ERROR;       /* ENOMEM */
+      memset(&ih.pointers[ih.num_pointers], 0, extra_recs * nlif_node_size);
+      ih.num_pointers += extra_recs;
+    }                              /* if (extra_recs > 0) */
+
+    if (!ih.pointers[ifi_msg->ifi_index])
+    {
+      ih.pointers[ifi_msg->ifi_index] = malloc(sizeof(struct ifindex_node));
+      if (!ih.pointers[ifi_msg->ifi_index])
+        return MNL_CB_ERROR;       /* ENOMEM */
+    }                              /* if (!ih.pointers[ifi_msg->ifi_index]) */
+
+    this = ih.pointers[ifi_msg->ifi_index];
+    goto set_this;
+  }                                /* if (tests[24]) */
+  else
+  {
     if (!this)
-      return MNL_CB_ERROR;
-    this->index = ifi_msg->ifi_index;
-    this->type = ifi_msg->ifi_type;
-    this->flags = ifi_msg->ifi_flags;
-    this->name[0] = 0;
-    list_add(&this->head, &ih.ifindex_hash[hash]);
-  }                                /* if (!this) */
+    {
+      uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
+
+      this = malloc(sizeof(*this));
+      if (!this)
+        return MNL_CB_ERROR;
+      this->index = ifi_msg->ifi_index;
+      list_add(&this->head, &ih.ifindex_hash[hash]);
+    set_this:
+      this->type = ifi_msg->ifi_type;
+      this->flags = ifi_msg->ifi_flags;
+      this->name[0] = 0;
+    }                              /* if (!this) */
+  }                                /* if (tests[24]) else */
 
   mnl_attr_for_each(attr, nlh, sizeof(*ifi_msg))
   {
