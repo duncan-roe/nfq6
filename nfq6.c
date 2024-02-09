@@ -36,7 +36,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 25
+#define NUM_TESTS 26
 #define NUM_NLIF_BITS 4
 #define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
 #define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
@@ -594,23 +594,25 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     uint32_t orig_len = ntohl(mnl_attr_get_u32(attr[NFQA_CAP_LEN]));
 
-    if (orig_len != plen)
+    if (orig_len != plen && !tests[25])
     {
       nc += snprintf(record_buf, sizeof record_buf, "%s", "truncated ");
       normal = false;
     }                              /* if (orig_len != plen) */
   }                                /* if (attr[NFQA_CAP_LEN]) */
 
-  if (skbinfo & NFQA_SKB_GSO)
+  if (skbinfo & NFQA_SKB_GSO && !tests[25])
   {
     nc += snprintf(record_buf + nc, sizeof record_buf - nc, "%s", "GSO ");
     normal = false;
   }                                /* if (skbinfo & NFQA_SKB_GSO) */
 
   id = ntohl(ph->packet_id);
-  nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-    "packet received (id=%u hw=0x%04x hook=%u, payload len %u", id,
-    nbo_proto = ntohs(ph->hw_protocol), ph->hook, plen);
+  nbo_proto = ntohs(ph->hw_protocol);
+  if (!tests[25])
+    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+      "packet received (id=%u hw=0x%04x hook=%u, payload len %u", id,
+      nbo_proto, ph->hook, plen);
 
 /*
  * The code from here down to "ip/tcp checksum is not yet valid"
@@ -717,46 +719,49 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
  * If we mangle this packet,
  * the called function will update the checksum.
  */
-  if (skbinfo & NFQA_SKB_CSUMNOTREADY)
+  if (!tests[25])
   {
-    nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-      ", checksum not ready");
-    if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
-      normal = false;
-  }                                /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
-
-  if (attr[NFQA_IFINDEX_INDEV])
-  {
-    uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
-
-    if (tests[24])
-      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-        ", indev = %u(%s)", indev, ih.pointers[indev]->name);
-    else
+    if (skbinfo & NFQA_SKB_CSUMNOTREADY)
     {
-      this = find_ifindex_node(indev);
       nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-        ", indev = %u(%s)", indev, this ? this->name : "");
-    }                              /* if (tests[24]) else */
-  }                                /* if (attr[NFQA_IFINDEX_INDEV]) */
+        ", checksum not ready");
+      if (ntohs(ph->hw_protocol) != ETH_P_IPV6 || tests[15])
+        normal = false;
+    }                              /* if (skbinfo & NFQA_SKB_CSUMNOTREADY) */
 
-  if (attr[NFQA_IFINDEX_OUTDEV])
-  {
-    uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
-
-    if (tests[24])
-      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-        ", outdev = %u(%s)", outdev, ih.pointers[outdev]->name);
-    else
+    if (attr[NFQA_IFINDEX_INDEV])
     {
-      this = find_ifindex_node(outdev);
-      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-        ", outdev = %u(%s)", outdev, this ? this->name : "");
-    }                              /* if (tests[24]) else */
-  }                                /* if (attr[NFQA_IFINDEX_OUTDEV]) */
+      uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
 
-  if (!normal)
-    printf("%s)\n", record_buf);
+      if (tests[24])
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", indev = %u(%s)", indev, ih.pointers[indev]->name);
+      else
+      {
+        this = find_ifindex_node(indev);
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", indev = %u(%s)", indev, this ? this->name : "");
+      }                            /* if (tests[24]) else */
+    }                              /* if (attr[NFQA_IFINDEX_INDEV]) */
+
+    if (attr[NFQA_IFINDEX_OUTDEV])
+    {
+      uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
+
+      if (tests[24])
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", outdev = %u(%s)", outdev, ih.pointers[outdev]->name);
+      else
+      {
+        this = find_ifindex_node(outdev);
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", outdev = %u(%s)", outdev, this ? this->name : "");
+      }                            /* if (tests[24]) else */
+    }                              /* if (attr[NFQA_IFINDEX_OUTDEV]) */
+
+    if (!normal)
+      printf("%s)\n", record_buf);
+  }                                /* if (!tests[25]) */
 
 /* Set up a packet buffer. If copying data, allow 255 bytes extra room;
  * otherwise use extra room in the receive buffer.
@@ -898,6 +903,7 @@ usage(void)
     "   22: Turn on NFQA_CFG_F_CONNTRACK\n" /*  */
     "   23: Turn on NFQA_CFG_F_SECCTX\n" /*  */
     "   24: Access ih nodes via indexed (sparse) array\n" /*  */
+    "   25: Never log packets (don't spend time formatting them)\n" /*  */
     );
 }                                  /* static void usage(void) */
 
