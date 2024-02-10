@@ -1012,7 +1012,7 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
     if (tests[24])
-      memset(&ih.pointers[ifi_msg->ifi_index], 0, nlif_node_size);
+      memset(ih.pointers[ifi_msg->ifi_index], 0, nlif_node_size);
     else
     {
       if (this)
