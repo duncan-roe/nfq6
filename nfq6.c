@@ -100,7 +100,7 @@ static int ifd = -1;
 /* Static prototypes */
 
 static struct ifindex_node *find_ifindex_node(uint32_t index);
-static int data_cb(const struct nlmsghdr *nlh, void *data);
+static int my_data_cb(const struct nlmsghdr *nlh, void *data);
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
@@ -324,40 +324,49 @@ main(int argc, char *argv[])
 
 /* Init rtnetlink */
 
-  inl = mnl_socket_open(NETLINK_ROUTE);
-  if (!inl)
+  errno = 0;
+  do
   {
-    perror("mnl_socket_open");
-    exit(EXIT_FAILURE);
-  }                                /* if (!inl) */
-  ifd = mnl_socket_get_fd(inl);
+    if (errno == EINTR)            /* Previous dump was interrupted */
+    {
+      errno = 0;
+      mnl_socket_close(inl);
+    }                              /* if (errno == EINTR) */
+    inl = mnl_socket_open(NETLINK_ROUTE);
+    if (!inl)
+    {
+      perror("mnl_socket_open");
+      exit(EXIT_FAILURE);
+    }                              /* if (!inl) */
+    ifd = mnl_socket_get_fd(inl);
 
-  if (mnl_socket_bind(inl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
-  {
-    perror("mnl_socket_bind");
-    exit(EXIT_FAILURE);
-  }                   /* if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0) */
-  iportid = mnl_socket_get_portid(inl);
-
-  nlh = mnl_nlmsg_put_header(nltxbuf);
-  nlh->nlmsg_type = RTM_GETLINK;
-  nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  nlh->nlmsg_seq = seq = time(NULL);
-  rt = mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtgenmsg));
-  rt->rtgen_family = AF_PACKET;
-  if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0)
-  {
-    perror("mnl_socket_sendto");
-    exit(EXIT_FAILURE);
-  }                   /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
-  ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
-  while (ret > 0)
-  {
-    ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, data_cb, NULL);
-    if (ret <= MNL_CB_STOP)
-      break;
+    if (mnl_socket_bind(inl, RTMGRP_LINK, MNL_SOCKET_AUTOPID) < 0)
+    {
+      perror("mnl_socket_bind");
+      exit(EXIT_FAILURE);
+    }                 /* if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0) */
+    iportid = mnl_socket_get_portid(inl);
+    nlh = mnl_nlmsg_put_header(nltxbuf);
+    nlh->nlmsg_type = RTM_GETLINK;
+    nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    nlh->nlmsg_seq = seq = time(NULL);
+    rt = mnl_nlmsg_put_extra_header(nlh, sizeof(struct rtgenmsg));
+    rt->rtgen_family = AF_PACKET;
+    if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0)
+    {
+      perror("mnl_socket_sendto");
+      exit(EXIT_FAILURE);
+    }                 /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
     ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
-  }                                /* while (ret > 0) */
+    while (ret > 0)
+    {
+      ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, my_data_cb, NULL);
+      if (ret <= MNL_CB_STOP)
+        break;
+      ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
+    }                              /* while (ret > 0) */
+  }                                /* do */
+  while (ret == -1 && errno == EINTR);
   if (ret == -1)                   /* Need to look for EINTR(?) */
   {
     perror("nlif_query");
@@ -389,7 +398,7 @@ main(int argc, char *argv[])
         perror("mnl_socket_recvfrom");
         exit(EXIT_FAILURE);
       }                            /* if (ret == -1) */
-      ret = mnl_cb_run(nlrxbuf, ret, 0, iportid, data_cb, NULL);
+      ret = mnl_cb_run(nlrxbuf, ret, 0, iportid, my_data_cb, NULL);
       if (ret == -1)
       {
         perror("mnl_cb_run (data)");
@@ -974,10 +983,10 @@ ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h)
   return nexthdr;
 }                                  /* ip6_get_proto() */
 
-/* ********************************* data_cb ******************************** */
+/* ******************************* my_data_cb ******************************* */
 
 static int
-data_cb(const struct nlmsghdr *nlh, void *data)
+my_data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
@@ -1072,7 +1081,7 @@ data_cb(const struct nlmsghdr *nlh, void *data)
     }                           /* if(mnl_attr_get_type(attr) == IFLA_IFNAME) */
   }                         /* mnl_attr_for_each(attr, nlh, sizeof(*ifi_msg)) */
   return MNL_CB_OK;
-}                                  /* data_cb() */
+}                                  /* my_data_cb() */
 
 /* **************************** find_ifindex_node *************************** */
 
