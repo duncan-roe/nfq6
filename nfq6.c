@@ -40,6 +40,7 @@
 #define NUM_NLIF_BITS 4
 #define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
 #define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
+#define my_free(node) do { list_add(node, &free_list); } while (0)
 
 /* If bool is a macro, get rid of it */
 #ifdef bool
@@ -96,9 +97,14 @@ static uint32_t queuelen;
 static struct nlif_handle ih;
 static int qfd = -1;
 static int ifd = -1;
+static struct list_head free_list = {
+  .next = &free_list,
+  .prev = &free_list,
+};
 
 /* Static prototypes */
 
+static void *malloc_node(void);
 static struct ifindex_node *find_ifindex_node(uint32_t index);
 static int my_data_cb(const struct nlmsghdr *nlh, void *data);
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
@@ -357,7 +363,7 @@ main(int argc, char *argv[])
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
     }                 /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
-    ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
+    ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
     while (ret > 0)
     {
       if (tests[26])
@@ -365,7 +371,7 @@ main(int argc, char *argv[])
       ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, my_data_cb, NULL);
       if (ret <= MNL_CB_STOP)
         break;
-      ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
+      ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
     }                              /* while (ret > 0) */
   }                                /* do */
   while (ret == -1 && errno == EINTR);
@@ -996,7 +1002,6 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
   struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
   int extra_recs;
-  static const size_t nlif_node_size = MNL_ALIGN(sizeof(struct ifindex_node));
   struct ifindex_node *this = NULL;
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
@@ -1017,13 +1022,20 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
     if (tests[24])
-      memset(ih.pointers[ifi_msg->ifi_index], 0, nlif_node_size);
+    {
+/* Re-use this node, if we haven't already */
+      if (ih.pointers[ifi_msg->ifi_index])
+      {
+        my_free((struct list_head *)ih.pointers[ifi_msg->ifi_index]);
+        ih.pointers[ifi_msg->ifi_index] = NULL;
+      }                            /* if (ih.pointers[ifi_msg->ifi_index]) */
+    }                              /* if (tests[24]) */
     else
     {
       if (this)
       {
-        list_del(&this->head);
-        free(this);
+        list_del((struct list_head *)this);
+        my_free((struct list_head *)this);
       }                            /* if (this) */
     }                              /* if (tests[24]) else */
     return MNL_CB_OK;
@@ -1035,17 +1047,17 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
     if (extra_recs > 0)
     {
       ih.pointers =
-        realloc(ih.pointers, (ih.num_pointers + extra_recs) * nlif_node_size);
+        realloc(ih.pointers, (ih.num_pointers + extra_recs) * sizeof(void *));
       if (!ih.pointers)
 
         return MNL_CB_ERROR;       /* ENOMEM */
-      memset(&ih.pointers[ih.num_pointers], 0, extra_recs * nlif_node_size);
+      memset(&ih.pointers[ih.num_pointers], 0, extra_recs * sizeof(void *));
       ih.num_pointers += extra_recs;
     }                              /* if (extra_recs > 0) */
 
     if (!ih.pointers[ifi_msg->ifi_index])
     {
-      ih.pointers[ifi_msg->ifi_index] = malloc(sizeof(struct ifindex_node));
+      ih.pointers[ifi_msg->ifi_index] = malloc_node();
       if (!ih.pointers[ifi_msg->ifi_index])
         return MNL_CB_ERROR;       /* ENOMEM */
     }                              /* if (!ih.pointers[ifi_msg->ifi_index]) */
@@ -1059,11 +1071,11 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
     {
       uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
 
-      this = malloc(sizeof(*this));
+      this = malloc_node();
       if (!this)
         return MNL_CB_ERROR;
       this->index = ifi_msg->ifi_index;
-      list_add(&this->head, &ih.ifindex_hash[hash]);
+      list_add((struct list_head *)this, &ih.ifindex_hash[hash]);
     set_this:
       this->type = ifi_msg->ifi_type;
       this->flags = ifi_msg->ifi_flags;
@@ -1111,3 +1123,17 @@ find_ifindex_node(uint32_t index)
   errno = ENOENT;
   return NULL;
 }                                  /* find_ifindex_node() */
+
+/* ******************************* malloc_node ****************************** */
+
+static void *malloc_node(void)
+{
+  struct list_head *result;
+
+  if (list_empty(&free_list))
+    return malloc(sizeof(struct ifindex_node));
+
+  result = free_list.next;
+  list_del(result);
+  return result;
+}                                  /* malloc_node() */
