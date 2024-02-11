@@ -337,6 +337,29 @@ main(int argc, char *argv[])
     {
       errno = 0;
       mnl_socket_close(inl);
+
+/* Recycle all nodes malloc'd so far */
+      if (tests[24])
+      {
+        for (i = ih.num_pointers - 1; i > 0; i--)
+          if (ih.pointers[i])
+          {
+            my_free((struct list_head *)ih.pointers[i]);
+            ih.pointers[i] = NULL;
+          }                        /* if (ih.pointers[i]) */
+      }                            /* if (tests[24]) */
+      else
+      {
+        struct list_head *tmp;
+
+        for (i = NUM_NLIF_ENTRIES - 1; i>= 0; i--)
+          while (!list_empty(&ih.ifindex_hash[i]))
+          {
+            tmp = ih.ifindex_hash[i].next;
+            list_del(tmp);
+            my_free(tmp);
+          }                        /* while (!list_empty(i->ifindex_hash[i])) */
+      }                            /* if (tests[24]) else */
     }                              /* if (errno == EINTR) */
     inl = mnl_socket_open(NETLINK_ROUTE);
     if (!inl)
