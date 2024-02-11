@@ -36,7 +36,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 26
+#define NUM_TESTS 27
 #define NUM_NLIF_BITS 4
 #define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
 #define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
@@ -360,6 +360,8 @@ main(int argc, char *argv[])
     ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof(nlrxbuf));
     while (ret > 0)
     {
+      if (tests[26])
+        printf("ret=%d\n", ret);
       ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, my_data_cb, NULL);
       if (ret <= MNL_CB_STOP)
         break;
@@ -393,6 +395,8 @@ main(int argc, char *argv[])
     if (fds[0].revents & POLLIN)
     {
       ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof nlrxbuf);
+      if (tests[26])
+        printf("ret=%d\n", ret);
       if (ret == -1)
       {
         perror("mnl_socket_recvfrom");
@@ -913,6 +917,7 @@ usage(void)
     "   23: Turn on NFQA_CFG_F_SECCTX\n" /*  */
     "   24: Access ih nodes via indexed (sparse) array\n" /*  */
     "   25: Never log packets (don't spend time formatting them)\n" /*  */
+    "   26: Report lengths of rtnetlink messages\n" /*  */
     );
 }                                  /* static void usage(void) */
 
