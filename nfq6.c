@@ -109,7 +109,7 @@ static int my_data_cb(const struct nlmsghdr *nlh, void *data);
 static uint8_t ip6_get_proto(const struct nlmsghdr *nlh, struct ip6_hdr *ip6h);
 static void usage(void);
 static int queue_cb(const struct nlmsghdr *nlh, void *data);
-static void send_verdict(int queue_num, uint32_t id, bool accept);
+static void my_send_verdict(int queue_num, uint32_t id, bool accept);
 
 /* Generic function pointers */
 
@@ -469,10 +469,10 @@ main(int argc, char *argv[])
   return 0;
 }                                  /* main() */
 
-/* ****************************** send_verdict ****************************** */
+/* ***************************** my_send_verdict **************************** */
 
 static void
-send_verdict(int queue_num, uint32_t id, bool accept)
+my_send_verdict(int queue_num, uint32_t id, bool accept)
 {
   struct nlmsghdr *nlh;
   struct nlattr *nest;
@@ -563,7 +563,7 @@ send_verdict(int queue_num, uint32_t id, bool accept)
       exit(EXIT_FAILURE);
     }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
   }                                /* if (pktb_mangled(pktb) && tests[8] else */
-}                                  /* send_verdict() */
+}                                  /* my_send_verdict() */
 
 /* ******************************** queue_cb ******************************** */
 
@@ -893,7 +893,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     my_xxp_mangle_ipvy(pktb, p - xxp_payload, 3, "VBN", 3);
 
 send_verdict:
-  send_verdict(ntohs(nfg->res_id), id, accept);
+  my_send_verdict(ntohs(nfg->res_id), id, accept);
 
   if (!tests[7])
     pktb_free(pktb);
