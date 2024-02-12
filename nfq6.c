@@ -79,7 +79,8 @@ struct nlif_handle
 
 static struct mnl_socket *nl;
 /* Largest possible packet payload, plus netlink data overhead: */
-static char buf[0xffff + 4096];
+static char nlrxbuf[0xffff + 4096];
+static char nltxbuf[sizeof nlrxbuf];
 static struct pkt_buff *pktb;
 static bool tests[NUM_TESTS] = { false };
 static bool sent_q;
@@ -217,7 +218,7 @@ main(int argc, char *argv[])
   printf("Read buffer set to 0x%x bytes (%.3gMB)\n", read_size,
     read_size / (1024.0 * 1024));
 
-  nlh = nfq_nlmsg_put(buf, NFQNL_MSG_CONFIG, queue_num);
+  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
   nfq_nlmsg_cfg_put_cmd(nlh, AF_UNSPEC, NFQNL_CFG_CMD_BIND);
 
   if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
@@ -226,7 +227,7 @@ main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }                    /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
-  nlh = nfq_nlmsg_put(buf, NFQNL_MSG_CONFIG, queue_num);
+  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_CONFIG, queue_num);
   nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
   config_flags = htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
@@ -245,7 +246,7 @@ main(int argc, char *argv[])
 
   if (tests[23])
   {
-    nlh = nfq_nlmsg_put2(buf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
+    nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_SECCTX));
     mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_SECCTX));
 
@@ -255,21 +256,21 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
-    ret = mnl_socket_recvfrom(nl, buf, sizeof buf);
+    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
     }                              /* if (ret == -1) */
 
-    ret = mnl_cb_run(buf, ret, 0, portid, NULL, NULL);
+    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
       perror("configure NFQA_CFG_F_SECCTX");
   }                                /* if (tests[23]) */
 
   if (tests[22])
   {
-    nlh = nfq_nlmsg_put2(buf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
+    nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_CONNTRACK));
     mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_CONNTRACK));
 
@@ -279,34 +280,34 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
 
-    ret = mnl_socket_recvfrom(nl, buf, sizeof buf);
+    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
     }                              /* if (ret == -1) */
 
-    ret = mnl_cb_run(buf, ret, 0, portid, NULL, NULL);
+    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
       perror("configure NFQA_CFG_F_CONNTRACK");
   }                                /* if (tests[22]) */
 
   if (queuelen)
   {
-    nlh = nfq_nlmsg_put2(buf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
+    nlh = nfq_nlmsg_put2(nltxbuf, NFQNL_MSG_CONFIG, queue_num, NLM_F_ACK);
     mnl_attr_put_u32(nlh, NFQA_CFG_QUEUE_MAXLEN, htonl(queuelen));
     if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
     {
       perror("mnl_socket_send");
       exit(EXIT_FAILURE);
     }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
-    ret = mnl_socket_recvfrom(nl, buf, sizeof buf);
+    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
     if (ret == -1)
     {
       perror("mnl_socket_recvfrom");
       exit(EXIT_FAILURE);
     }                              /* if (ret == -1) */
-    ret = mnl_cb_run(buf, ret, 0, portid, NULL, NULL);
+    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
     if (ret == -1)
       fprintf(stderr, "Set queue size %u: %s\n", queuelen, strerror(errno));
   }                                /* if (queuelen) */
@@ -374,7 +375,7 @@ main(int argc, char *argv[])
       exit(EXIT_FAILURE);
     }                 /* if (mnl_socket_bind(inl, 0, MNL_SOCKET_AUTOPID) < 0) */
     iportid = mnl_socket_get_portid(inl);
-    nlh = mnl_nlmsg_put_header(buf);
+    nlh = mnl_nlmsg_put_header(nltxbuf);
     nlh->nlmsg_type = RTM_GETLINK;
     nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
     nlh->nlmsg_seq = seq = time(NULL);
@@ -385,15 +386,15 @@ main(int argc, char *argv[])
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
     }                 /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
-    ret = mnl_socket_recvfrom(inl, buf, MNL_SOCKET_BUFFER_SIZE);
+    ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
     while (ret > 0)
     {
       if (tests[26])
         printf("ret=%d\n", ret);
-      ret = mnl_cb_run(buf, ret, seq, iportid, my_data_cb, NULL);
+      ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, my_data_cb, NULL);
       if (ret <= MNL_CB_STOP)
         break;
-      ret = mnl_socket_recvfrom(inl, buf, MNL_SOCKET_BUFFER_SIZE);
+      ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
     }                              /* while (ret > 0) */
   }                                /* do */
   while (ret == -1 && errno == EINTR);
@@ -422,7 +423,7 @@ main(int argc, char *argv[])
 
     if (fds[0].revents & POLLIN)
     {
-      ret = mnl_socket_recvfrom(inl, buf, sizeof buf);
+      ret = mnl_socket_recvfrom(inl, nlrxbuf, sizeof nlrxbuf);
       if (tests[26])
         printf("ret=%d\n", ret);
       if (ret == -1)
@@ -430,7 +431,7 @@ main(int argc, char *argv[])
         perror("mnl_socket_recvfrom");
         exit(EXIT_FAILURE);
       }                            /* if (ret == -1) */
-      ret = mnl_cb_run(buf, ret, 0, iportid, my_data_cb, NULL);
+      ret = mnl_cb_run(nlrxbuf, ret, 0, iportid, my_data_cb, NULL);
       if (ret == -1)
       {
         perror("mnl_cb_run (data)");
@@ -440,7 +441,7 @@ main(int argc, char *argv[])
 
     if (fds[1].revents & POLLIN)
     {
-      ret = mnl_socket_recvfrom(nl, buf, sizeof buf);
+      ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
       if (ret == -1)
       {
         perror("mnl_socket_recvfrom");
@@ -448,10 +449,10 @@ main(int argc, char *argv[])
           continue;
         exit(EXIT_FAILURE);
       }                            /* if (ret == -1) */
-      assert(((struct nlmsghdr *)buf)->nlmsg_len == ret);
-      sperrume = sizeof buf - ret;
+      assert(((struct nlmsghdr *)nlrxbuf)->nlmsg_len == ret);
+      sperrume = sizeof nlrxbuf - ret;
 
-      ret = mnl_cb_run(buf, ret, 0, portid, queue_cb, &sperrume);
+      ret = mnl_cb_run(nlrxbuf, ret, 0, portid, queue_cb, &sperrume);
       if (ret < 0 && (errno != EINTR || tests[14]))
       {
         perror("mnl_cb_run");
@@ -478,7 +479,7 @@ my_send_verdict(int queue_num, uint32_t id, bool accept)
   struct nlattr *nest;
   bool done = false;
 
-  nlh = nfq_nlmsg_put(buf, NFQNL_MSG_VERDICT, queue_num);
+  nlh = nfq_nlmsg_put(nltxbuf, NFQNL_MSG_VERDICT, queue_num);
 
   if (!accept)
   {
