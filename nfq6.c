@@ -324,7 +324,7 @@ main(int argc, char *argv[])
 /* Init rtnetlink sructures */
 
   if (!tests[24])
-    for (i = 0; i < NUM_NLIF_ENTRIES; i++)
+    for (i = NUM_NLIF_ENTRIES - 1; i>= 0; i--)
       INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
 /* Init rtnetlink */
