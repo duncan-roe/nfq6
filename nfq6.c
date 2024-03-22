@@ -104,6 +104,8 @@ static struct list_head free_list = {
 
 /* Static prototypes */
 
+static int my_socket_sendto(struct nlmsghdr *nlh, char *buf,
+  unsigned int portid);
 static void *malloc_node(void);
 static struct ifindex_node *find_ifindex_node(uint32_t index);
 static int my_data_cb(const struct nlmsghdr *nlh, void *data);
@@ -250,22 +252,12 @@ main(int argc, char *argv[])
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_SECCTX));
     mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_SECCTX));
 
-    if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
+    if (my_socket_sendto(nlh, nltxbuf, portid) < 0)
     {
-      perror("mnl_socket_send");
-      exit(EXIT_FAILURE);
-    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
-
-    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
-    if (ret == -1)
-    {
-      perror("mnl_socket_recvfrom");
-      exit(EXIT_FAILURE);
-    }                              /* if (ret == -1) */
-
-    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
-    if (ret == -1)
       perror("configure NFQA_CFG_F_SECCTX");
+      if (errno != EOPNOTSUPP)
+        exit(EXIT_FAILURE);
+    }                      /* if (my_socket_sendto(nlh, nltxbuf, portid) < 0) */
   }                                /* if (tests[23]) */
 
   if (tests[22])
@@ -274,22 +266,12 @@ main(int argc, char *argv[])
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, htonl(NFQA_CFG_F_CONNTRACK));
     mnl_attr_put_u32(nlh, NFQA_CFG_MASK, htonl(NFQA_CFG_F_CONNTRACK));
 
-    if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0)
+    if (my_socket_sendto(nlh, nltxbuf, portid) < 0)
     {
-      perror("mnl_socket_send");
-      exit(EXIT_FAILURE);
-    }                  /* if (mnl_socket_sendto(nl, nlh, nlh->nlmsg_len) < 0) */
-
-    ret = mnl_socket_recvfrom(nl, nlrxbuf, sizeof nlrxbuf);
-    if (ret == -1)
-    {
-      perror("mnl_socket_recvfrom");
-      exit(EXIT_FAILURE);
-    }                              /* if (ret == -1) */
-
-    ret = mnl_cb_run(nlrxbuf, ret, 0, portid, NULL, NULL);
-    if (ret == -1)
       perror("configure NFQA_CFG_F_CONNTRACK");
+      if (errno != EOPNOTSUPP)
+        exit(EXIT_FAILURE);
+    }                  /* if (my_socket_sendto(nlh, nltxbuf, portid) < 0) */
   }                                /* if (tests[22]) */
 
   if (queuelen)
@@ -398,7 +380,7 @@ main(int argc, char *argv[])
     }                              /* while (ret > 0) */
   }                                /* do */
   while (ret == -1 && errno == EINTR);
-  if (ret == -1)                   /* Need to look for EINTR(?) */
+  if (ret == -1)
   {
     perror("nlif_query");
     exit(EXIT_FAILURE);
@@ -1160,3 +1142,18 @@ malloc_node(void)
   list_del(result);
   return result;
 }                                  /* malloc_node() */
+
+/* **************************** my_socket_sendto **************************** */
+
+static int
+my_socket_sendto(struct nlmsghdr *nlh, char *buf, unsigned int portid)
+{
+  int ret;
+
+  ret = mnl_socket_sendto(nl, nlh, nlh->nlmsg_len);
+  if (ret != -1)
+    ret = mnl_socket_recvfrom(nl, buf, MNL_SOCKET_BUFFER_SIZE);
+  if (ret != -1)
+    ret = mnl_cb_run(buf, ret, 0, portid, NULL, NULL);
+  return ret == -1 ? -1 : 0;
+}
