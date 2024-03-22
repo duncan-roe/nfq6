@@ -539,9 +539,8 @@ my_send_verdict(int queue_num, uint32_t id, bool accept)
       .msg_flags = 0,
     };                             /* const struct msghdr msg = */
 
-    attrib->nla_type = NFQA_PAYLOAD;
-    attrib->nla_len = sizeof(struct nlattr) + len;
-    nlh->nlmsg_len += sizeof(struct nlattr);
+    mnl_attr_put(nlh, NFQA_PAYLOAD, 0, NULL);
+    attrib->nla_len += len;
     iov[0].iov_base = nlh;
     iov[0].iov_len = nlh->nlmsg_len;
     iov[1].iov_base = pktb_data(pktb);
