@@ -325,7 +325,7 @@ main(int argc, char *argv[])
 /* Init rtnetlink sructures */
 
   if (!tests[24])
-    for (i = NUM_NLIF_ENTRIES - 1; i>= 0; i--)
+    for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
       INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
 /* Init rtnetlink */
@@ -352,7 +352,7 @@ main(int argc, char *argv[])
       {
         struct list_head *tmp;
 
-        for (i = NUM_NLIF_ENTRIES - 1; i>= 0; i--)
+        for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
           while (!list_empty(&ih.ifindex_hash[i]))
           {
             tmp = ih.ifindex_hash[i].next;
@@ -1148,7 +1148,8 @@ find_ifindex_node(uint32_t index)
 
 /* ******************************* malloc_node ****************************** */
 
-static void *malloc_node(void)
+static void *
+malloc_node(void)
 {
   struct list_head *result;
 
