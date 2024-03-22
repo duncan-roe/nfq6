@@ -78,7 +78,7 @@ struct nlif_handle
 /* Static Variables */
 
 static struct mnl_socket *nl;
-/* Largest possible packet payload, plus netlink data overhead: */
+/* Requested copy size plus netlink data overhead: */
 static char nlrxbuf[0xffff + 4096];
 static char nltxbuf[sizeof nlrxbuf];
 static struct pkt_buff *pktb;
@@ -819,7 +819,7 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
   {
     pktb = pktb_alloc(AF_INET6, payload, plen, EXTRA);
     errfunc = "pktb_alloc";
-  }                                /* if (!tests[7] else */
+  }                                /* if (tests[7] else */
   if (!pktb)
   {
     snprintf(erbuf, sizeof erbuf, "%s. (%s)\n", strerror(errno), errfunc);
