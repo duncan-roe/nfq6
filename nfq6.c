@@ -36,7 +36,7 @@
 
 /* Macros */
 
-#define NUM_TESTS 27
+#define NUM_TESTS 28
 #define NUM_NLIF_BITS 4
 #define NUM_NLIF_ENTRIES (1 << NUM_NLIF_BITS)
 #define NLIF_ENTRY_MASK (NUM_NLIF_ENTRIES -1)
@@ -271,7 +271,7 @@ main(int argc, char *argv[])
       perror("configure NFQA_CFG_F_CONNTRACK");
       if (errno != EOPNOTSUPP)
         exit(EXIT_FAILURE);
-    }                  /* if (my_socket_sendto(nlh, nltxbuf, portid) < 0) */
+    }                      /* if (my_socket_sendto(nlh, nltxbuf, portid) < 0) */
   }                                /* if (tests[22]) */
 
   if (queuelen)
@@ -368,7 +368,8 @@ main(int argc, char *argv[])
       perror("mnl_socket_sendto");
       exit(EXIT_FAILURE);
     }                 /* if (mnl_socket_sendto(inl, nlh, nlh->nlmsg_len) < 0) */
-    ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
+    ret = mnl_socket_recvfrom(inl, nlrxbuf,
+      tests[27] ? MNL_SOCKET_BUFFER_SIZE : sizeof(nlrxbuf));
     while (ret > 0)
     {
       if (tests[26])
@@ -376,7 +377,8 @@ main(int argc, char *argv[])
       ret = mnl_cb_run(nlrxbuf, ret, seq, iportid, my_data_cb, NULL);
       if (ret <= MNL_CB_STOP)
         break;
-      ret = mnl_socket_recvfrom(inl, nlrxbuf, MNL_SOCKET_BUFFER_SIZE);
+      ret = mnl_socket_recvfrom(inl, nlrxbuf,
+        tests[27] ? MNL_SOCKET_BUFFER_SIZE : sizeof(nlrxbuf));
     }                              /* while (ret > 0) */
   }                                /* do */
   while (ret == -1 && errno == EINTR);
@@ -928,6 +930,7 @@ usage(void)
     "   24: Access ih nodes via indexed (sparse) array\n" /*  */
     "   25: Never log packets (don't spend time formatting them)\n" /*  */
     "   26: Report lengths of rtnetlink messages\n" /*  */
+    "   27: Use a minimally-sized buffer to get rtnetlink messages\n" /*  */
     );
 }                                  /* static void usage(void) */
 
