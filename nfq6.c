@@ -3,6 +3,8 @@
 /* System headers */
 
 #define _GNU_SOURCE                /* To get memmem */
+#include <grp.h>
+#include <pwd.h>
 #include <poll.h>
 #include <time.h>
 #include <ctype.h>
@@ -233,7 +235,8 @@ main(int argc, char *argv[])
   nfq_nlmsg_cfg_put_params(nlh, NFQNL_COPY_PACKET, 0xffff);
 
   config_flags = htonl((tests[20] ? 0 : NFQA_CFG_F_GSO) |
-    (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0));
+    (tests[3] ? NFQA_CFG_F_FAIL_OPEN : 0) |
+    (tests[25] ? 0 : NFQA_CFG_F_UID_GID));
   if (config_flags)
   {
     mnl_attr_put_u32(nlh, NFQA_CFG_FLAGS, config_flags);
@@ -760,12 +763,12 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 
       if (tests[24])
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", indev = %u(%s)", indev, ih.pointers[indev]->name);
+          ", indev=%u(%s)", indev, ih.pointers[indev]->name);
       else
       {
         this = find_ifindex_node(indev);
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", indev = %u(%s)", indev, this ? this->name : "");
+          ", indev=%u(%s)", indev, this ? this->name : "");
       }                            /* if (tests[24]) else */
     }                              /* if (attr[NFQA_IFINDEX_INDEV]) */
 
@@ -775,14 +778,40 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
 
       if (tests[24])
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", outdev = %u(%s)", outdev, ih.pointers[outdev]->name);
+          ", outdev=%u(%s)", outdev, ih.pointers[outdev]->name);
       else
       {
         this = find_ifindex_node(outdev);
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", outdev = %u(%s)", outdev, this ? this->name : "");
+          ", outdev=%u(%s)", outdev, this ? this->name : "");
       }                            /* if (tests[24]) else */
     }                              /* if (attr[NFQA_IFINDEX_OUTDEV]) */
+
+    if (attr[NFQA_UID])
+    {
+      uint32_t uid = ntohl(mnl_attr_get_u32(attr[NFQA_UID]));
+      struct passwd *pwd = getpwuid(uid);
+
+      if (pwd)
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", user=%s", pwd->pw_name);
+      else
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", uid=%u", uid);
+    }                              /* if (attr[NFQA_UID]) */
+
+    if (attr[NFQA_GID])
+    {
+      uint32_t gid = ntohl(mnl_attr_get_u32(attr[NFQA_GID]));
+      struct group *grp = getgrgid(gid);
+
+      if (grp)
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", group=%s", grp->gr_name);
+      else
+        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+          ", gid=%u", gid);
+    }                              /* if (attr[NFQA_GID]) */
 
     if (!normal)
       printf("%s)\n", record_buf);
