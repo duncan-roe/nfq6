@@ -790,11 +790,20 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     if (attr[NFQA_UID])
     {
       uint32_t uid = ntohl(mnl_attr_get_u32(attr[NFQA_UID]));
-      struct passwd *pwd = getpwuid(uid);
+      static struct passwd pwd;
+      static struct passwd *result;
+      int ret = 0;
+      static char buf[1024];
 
-      if (pwd)
+      if (!result || pwd.pw_uid != uid)
+        do
+          ret = getpwuid_r(uid, &pwd, buf, sizeof buf, &result);
+        while (ret == EINTR);
+      if (ret)
+        fprintf(stderr, "%s. getpwuid_r(%u)", strerror(ret), uid);
+      if (result)
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", user=%s", pwd->pw_name);
+          ", user=%s", pwd.pw_name);
       else
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
           ", uid=%u", uid);
@@ -803,11 +812,20 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     if (attr[NFQA_GID])
     {
       uint32_t gid = ntohl(mnl_attr_get_u32(attr[NFQA_GID]));
-      struct group *grp = getgrgid(gid);
+      static struct group grp;
+      static struct group *result;
+      int ret = 0;
+      static char buf[1024];
 
-      if (grp)
+      if (!result || grp.gr_gid != gid)
+        do
+          ret = getgrgid_r(gid, &grp, buf, sizeof buf, &result);
+        while (ret == EINTR);
+      if (ret)
+        fprintf(stderr, "%s. getgrgid_r(%u)", strerror(ret), gid);
+      if (result)
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", group=%s", grp->gr_name);
+          ", group=%s", grp.gr_name);
       else
         nc += snprintf(record_buf + nc, sizeof record_buf - nc,
           ", gid=%u", gid);
