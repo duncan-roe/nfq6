@@ -309,9 +309,8 @@ main(int argc, char *argv[])
 
 /* Init rtnetlink sructures */
 
-  if (!tests[24])
-    for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
-      INIT_LIST_HEAD(&ih.ifindex_hash[i]);
+  for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
+    INIT_LIST_HEAD(&ih.ifindex_hash[i]);
 
 /* Init rtnetlink */
 
@@ -974,7 +973,7 @@ usage(void)
     "   21: Send a nested connmark\n" /*  */
     "   22: Turn on NFQA_CFG_F_CONNTRACK\n" /*  */
     "   23: Turn on NFQA_CFG_F_SECCTX\n" /*  */
-    "   24: Access ih nodes via indexed (sparse) array\n" /*  */
+    "   24: N/A (no-op)\n"         /*  */
     "   25: Never log packets (don't spend time formatting them)\n" /*  */
     "   26: Report lengths of rtnetlink messages\n" /*  */
     "   27: Use a minimally-sized buffer to get rtnetlink messages\n" /*  */
@@ -1055,7 +1054,6 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
 {
   struct ifinfomsg *ifi_msg = mnl_nlmsg_get_payload(nlh);
   struct nlattr *attr;
-  int extra_recs;
   struct ifindex_node *this = NULL;
 
   if (nlh->nlmsg_type != RTM_NEWLINK && nlh->nlmsg_type != RTM_DELLINK)
@@ -1064,8 +1062,7 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
     return MNL_CB_ERROR;
   }                              /* if (nlh->nlmsg_type != RTM_NEWLINK && ... */
 
-  if (!tests[24])
-    this = find_ifindex_node(ifi_msg->ifi_index);
+  this = find_ifindex_node(ifi_msg->ifi_index);
 
 /*
  * rtnetlink.c used list_for_each_entry_safe() and removed all entries with the
@@ -1075,67 +1072,27 @@ my_data_cb(const struct nlmsghdr *nlh, void *data)
 /* RTM_DELLINK is simple, do it first for less indenting */
   if (nlh->nlmsg_type == RTM_DELLINK)
   {
-    if (tests[24])
+    if (this)
     {
-/* Re-use this node, if we haven't already */
-      if (ih.pointers[ifi_msg->ifi_index])
-      {
-        my_free((struct list_head *)ih.pointers[ifi_msg->ifi_index]);
-        ih.pointers[ifi_msg->ifi_index] = NULL;
-      }                            /* if (ih.pointers[ifi_msg->ifi_index]) */
-    }                              /* if (tests[24]) */
-    else
-    {
-      if (this)
-      {
-        list_del((struct list_head *)this);
-        my_free((struct list_head *)this);
-      }                            /* if (this) */
-    }                              /* if (tests[24]) else */
+      list_del((struct list_head *)this);
+      my_free((struct list_head *)this);
+    }                              /* if (this) */
     return MNL_CB_OK;
   }                                /* if (nlh->nlmsg_type == RTM_DELLINK) */
 
-  if (tests[24])
+  if (!this)
   {
-    extra_recs = ifi_msg->ifi_index + 1 - ih.num_pointers;
-    if (extra_recs > 0)
-    {
-      ih.pointers =
-        realloc(ih.pointers, (ih.num_pointers + extra_recs) * sizeof(void *));
-      if (!ih.pointers)
+    uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
 
-        return MNL_CB_ERROR;       /* ENOMEM */
-      memset(&ih.pointers[ih.num_pointers], 0, extra_recs * sizeof(void *));
-      ih.num_pointers += extra_recs;
-    }                              /* if (extra_recs > 0) */
-
-    if (!ih.pointers[ifi_msg->ifi_index])
-    {
-      ih.pointers[ifi_msg->ifi_index] = malloc_node();
-      if (!ih.pointers[ifi_msg->ifi_index])
-        return MNL_CB_ERROR;       /* ENOMEM */
-    }                              /* if (!ih.pointers[ifi_msg->ifi_index]) */
-
-    this = ih.pointers[ifi_msg->ifi_index];
-    goto set_this;
-  }                                /* if (tests[24]) */
-  else
-  {
+    this = malloc_node();
     if (!this)
-    {
-      uint32_t hash = ifi_msg->ifi_index & NLIF_ENTRY_MASK;
-
-      this = malloc_node();
-      if (!this)
-        return MNL_CB_ERROR;
-      this->index = ifi_msg->ifi_index;
-      list_add((struct list_head *)this, &ih.ifindex_hash[hash]);
-    set_this:
-      this->type = ifi_msg->ifi_type;
-      this->flags = ifi_msg->ifi_flags;
-      this->name[0] = 0;
-    }                              /* if (!this) */
-  }                                /* if (tests[24]) else */
+      return MNL_CB_ERROR;
+    this->index = ifi_msg->ifi_index;
+    list_add((struct list_head *)this, &ih.ifindex_hash[hash]);
+    this->type = ifi_msg->ifi_type;
+    this->flags = ifi_msg->ifi_flags;
+    this->name[0] = 0;
+  }                                /* if (!this) */
 
   mnl_attr_for_each(attr, nlh, sizeof(*ifi_msg))
   {
