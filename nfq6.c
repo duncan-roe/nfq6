@@ -36,6 +36,8 @@
 /* NFQA_CT requires CTA_* attributes defined in nfnetlink_conntrack.h */
 #include <linux/netfilter/nfnetlink_conntrack.h>
 
+#include "linux_list.h"
+
 /* Macros */
 
 #define NUM_TESTS 28
