@@ -94,7 +94,6 @@ static bool quit;
 static socklen_t wanted_size = 1024 * 1024 * 8;
 static socklen_t socklen = sizeof wanted_size;
 static socklen_t read_size;
-static struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 static char *myP;
 static uint8_t myPROTO, myPreviousPROTO = IPPROTO_IP;
 static uint32_t queuelen;
@@ -108,6 +107,8 @@ static struct list_head free_list = {
 
 /* Static prototypes */
 
+static ssize_t my_mnl_socket_sendmsg(const struct mnl_socket *nl,
+  const struct iovec *iov, unsigned int num, unsigned int flags);
 static int my_socket_sendto(struct nlmsghdr *nlh, char *buf,
   unsigned int portid);
 static void *malloc_node(void);
@@ -517,15 +518,6 @@ my_send_verdict(int queue_num, uint32_t id, bool accept)
     struct nlattr *attrib = mnl_nlmsg_get_payload_tail(nlh);
     size_t len = pktb_len(pktb);
     struct iovec iov[2];
-    const struct msghdr msg = {
-      .msg_name = &snl,
-      .msg_namelen = sizeof snl,
-      .msg_iov = iov,
-      .msg_iovlen = 2,
-      .msg_control = NULL,
-      .msg_controllen = 0,
-      .msg_flags = 0,
-    };                             /* const struct msghdr msg = */
 
     mnl_attr_put(nlh, NFQA_PAYLOAD, 0, NULL);
     attrib->nla_len += len;
@@ -534,11 +526,11 @@ my_send_verdict(int queue_num, uint32_t id, bool accept)
     iov[1].iov_base = pktb_data(pktb);
     iov[1].iov_len = len;
     nlh->nlmsg_len += len;
-    if (sendmsg(qfd, &msg, 0) < 0)
+    if (my_mnl_socket_sendmsg(nl, iov, 2, 0) < 0)
     {
-      perror("sendmsg");
+      perror("my_mnl_socket_sendmsg");
       exit(EXIT_FAILURE);
-    }                              /* if (sendmsg(qfd, &msg, 0) < 0) */
+    }                        /* if (my_mnl_socket_sendmsg(nl, iov, 2, 0) < 0) */
   }                                /* if (pktb_mangled(pktb) && tests[8]) */
   else
   {
@@ -1166,3 +1158,31 @@ my_socket_sendto(struct nlmsghdr *nlh, char *buf, unsigned int portid)
     ret = mnl_cb_run(buf, ret, 0, portid, NULL, NULL);
   return ret == -1 ? -1 : 0;
 }
+
+/* ************************** my_mnl_socket_sendmsg ************************* */
+
+/* !!TEMPORARY!! definition of (opaque) struct mnl_socket */
+struct mnl_socket
+{
+  int fd;
+  struct sockaddr_nl addr;
+};                                 /* struct mnl_socket */
+
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+static ssize_t
+my_mnl_socket_sendmsg(const struct mnl_socket *nl, const struct iovec *iov,
+  unsigned int num, unsigned int flags)
+{
+  struct msghdr msg;
+
+  msg.msg_name = (struct sockaddr *)&nl->addr;
+  msg.msg_namelen = sizeof(nl->addr);
+  msg.msg_iov = (struct iovec *)iov;
+  msg.msg_iovlen = num;
+  msg.msg_control = NULL;
+  msg.msg_controllen = 0;
+  msg.msg_flags = 0;
+
+  return sendmsg(nl->fd, &msg, flags);
+}                                  /* my_mnl_socket_sendmsg() */
