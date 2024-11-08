@@ -1122,10 +1122,7 @@ find_ifindex_node(uint32_t index)
   uint32_t hash;
 
   if (index == 0)
-  {
-    errno = ENOENT;
     return NULL;
-  }                                /* if (index == 0) */
 
   hash = index & NLIF_ENTRY_MASK;
   list_for_each_entry(result, &ih.ifindex_hash[hash], head)
@@ -1133,7 +1130,6 @@ find_ifindex_node(uint32_t index)
     if (result->index == index)
       return result;
   }              /* list_for_each_entry(result, &ih.ifindex_hash[hash], head) */
-  errno = ENOENT;
   return NULL;
 }                                  /* find_ifindex_node() */
 
