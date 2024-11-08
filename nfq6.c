@@ -326,27 +326,15 @@ main(int argc, char *argv[])
       mnl_socket_close(inl);
 
 /* Recycle all nodes malloc'd so far */
-      if (tests[24])
-      {
-        for (i = ih.num_pointers - 1; i > 0; i--)
-          if (ih.pointers[i])
-          {
-            my_free((struct list_head *)ih.pointers[i]);
-            ih.pointers[i] = NULL;
-          }                        /* if (ih.pointers[i]) */
-      }                            /* if (tests[24]) */
-      else
-      {
-        struct list_head *tmp;
+      struct list_head *tmp;
 
-        for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
-          while (!list_empty(&ih.ifindex_hash[i]))
-          {
-            tmp = ih.ifindex_hash[i].next;
-            list_del(tmp);
-            my_free(tmp);
-          }                        /* while (!list_empty(i->ifindex_hash[i])) */
-      }                            /* if (tests[24]) else */
+      for (i = NUM_NLIF_ENTRIES - 1; i >= 0; i--)
+        while (!list_empty(&ih.ifindex_hash[i]))
+        {
+          tmp = ih.ifindex_hash[i].next;
+          list_del(tmp);
+          my_free(tmp);
+        }                          /* while (!list_empty(i->ifindex_hash[i])) */
     }                              /* if (errno == EINTR) */
     inl = mnl_socket_open(NETLINK_ROUTE);
     if (!inl)
@@ -754,30 +742,18 @@ queue_cb(const struct nlmsghdr *nlh, void *data)
     {
       uint32_t indev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_INDEV]));
 
-      if (tests[24])
-        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", indev=%u(%s)", indev, ih.pointers[indev]->name);
-      else
-      {
-        this = find_ifindex_node(indev);
-        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", indev=%u(%s)", indev, this ? this->name : "");
-      }                            /* if (tests[24]) else */
+      this = find_ifindex_node(indev);
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", indev=%u(%s)", indev, this ? this->name : "");
     }                              /* if (attr[NFQA_IFINDEX_INDEV]) */
 
     if (attr[NFQA_IFINDEX_OUTDEV])
     {
       uint32_t outdev = ntohl(mnl_attr_get_u32(attr[NFQA_IFINDEX_OUTDEV]));
 
-      if (tests[24])
-        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", outdev=%u(%s)", outdev, ih.pointers[outdev]->name);
-      else
-      {
-        this = find_ifindex_node(outdev);
-        nc += snprintf(record_buf + nc, sizeof record_buf - nc,
-          ", outdev=%u(%s)", outdev, this ? this->name : "");
-      }                            /* if (tests[24]) else */
+      this = find_ifindex_node(outdev);
+      nc += snprintf(record_buf + nc, sizeof record_buf - nc,
+        ", outdev=%u(%s)", outdev, this ? this->name : "");
     }                              /* if (attr[NFQA_IFINDEX_OUTDEV]) */
 
     if (attr[NFQA_UID])
@@ -1114,10 +1090,7 @@ find_ifindex_node(uint32_t index)
   uint32_t hash;
 
   if (index == 0)
-  {
-    errno = ENOENT;
     return NULL;
-  }                                /* if (index == 0) */
 
   hash = index & NLIF_ENTRY_MASK;
   list_for_each_entry(result, &ih.ifindex_hash[hash], head)
@@ -1125,7 +1098,6 @@ find_ifindex_node(uint32_t index)
     if (result->index == index)
       return result;
   }              /* list_for_each_entry(result, &ih.ifindex_hash[hash], head) */
-  errno = ENOENT;
   return NULL;
 }                                  /* find_ifindex_node() */
 
