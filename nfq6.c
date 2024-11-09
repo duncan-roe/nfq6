@@ -1140,8 +1140,6 @@ struct mnl_socket
   struct sockaddr_nl addr;
 };                                 /* struct mnl_socket */
 
-#pragma GCC diagnostic ignored "-Wshadow"
-#pragma GCC diagnostic ignored "-Wcast-qual"
 static ssize_t
 my_mnl_socket_sendmsg(const struct mnl_socket *nl, const struct iovec *iov,
   unsigned int num, unsigned int flags)
