@@ -1145,8 +1145,9 @@ my_mnl_socket_sendmsg(const struct mnl_socket *nl, const struct iovec *iov,
   unsigned int num, unsigned int flags)
 {
   struct msghdr msg;
+  static const struct sockaddr_nl snl = {.nl_family = AF_NETLINK };
 
-  msg.msg_name = (struct sockaddr *)&nl->addr;
+  msg.msg_name = (struct sockaddr *)&snl;
   msg.msg_namelen = sizeof(nl->addr);
   msg.msg_iov = (struct iovec *)iov;
   msg.msg_iovlen = num;
